@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Advanced Data Transfer Options</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            width: 400px;
+            padding: 20px;
+        }
+        h2 { color: #333; }
+        label { display: block; margin-top: 10px; }
+        input[type="text"] {
+            width: 95%;
+            padding: 8px;
+            margin-top: 5px;
+        }
+        button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #status {
+            margin-top: 10px;
+            font-size: 14px;
+            color: green;
+        }
+    </style>
+</head>
+<body>
+    <h2>Extension Settings</h2>
+    <form id="optionsForm">
+        <label for="sourceUrl">Source Page URL:</label>
+        <input type="text" id="sourceUrl" name="sourceUrl" placeholder="e.g., https://www.w3schools.com/html/html_tables.asp">
+        
+        <label for="destinationUrl">Destination Page URL:</label>
+        <input type="text" id="destinationUrl" name="destinationUrl" placeholder="e.g., https://www.w3schools.com/howto/howto_css_contact_form.asp">
+
+        <button type="submit">Save Settings</button>
+        <div id="status"></div>
+    </form>
+    <script src="options.js"></script>
+</body>
+</html>
