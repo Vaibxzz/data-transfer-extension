@@ -1,36 +1,95 @@
-//For scrapping for first row information.
-// Listen for messages from the popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'startTransfer') {
-        startTransferProcess().then(sendResponse);
-        return true;
-    }
-});
+// Claude API integration
+const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
 
-async function startTransferProcess() {
+async function callClaudeAPI(prompt, apiKey) {
     try {
-        const urls = await chrome.storage.sync.get(['sourceUrl', 'destinationUrl']);
-        if (!urls.sourceUrl || !urls.destinationUrl) {
-            return { success: false, message: 'Please configure the source and destination URLs in the options page.' };
-        }
-
-        const [sourceTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (!sourceTab || sourceTab.url !== urls.sourceUrl) {
-            return { success: false, message: `Please navigate to the source page: ${urls.sourceUrl}` };
-        }
-
-        const [scrapingResult] = await chrome.scripting.executeScript({
-            target: { tabId: sourceTab.id },
-            function: scrapeTableData
+        const response = await fetch(CLAUDE_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+                model: 'claude-3-haiku-20240307',
+                max_tokens: 1000,
+                messages: [{
+                    role: 'user',
+                    content: prompt
+                }]
+            })
         });
 
-        const dataToTransfer = scrapingResult.result;
-        if (!dataToTransfer) {
-            return { success: false, message: 'Could not find any data with a country on the source page.' };
+        if (!response.ok) {
+            throw new Error(`Claude API error: ${response.status} ${response.statusText}`);
         }
-        
-        const destinationTab = await chrome.tabs.create({ url: urls.destinationUrl });
 
+        const data = await response.json();
+        return data.content[0].text;
+    } catch (error) {
+        console.error('Claude API call failed:', error);
+        throw error;
+    }
+}
+
+// SINGLE message listener to handle all actions
+chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
+    
+    if (request.action === 'proceedTransfer') {
+        const dataToTransfer = request.data;
+
+        // Get Claude API key from storage
+        const { claudeApiKey } = await chrome.storage.sync.get('claudeApiKey');
+        
+        if (claudeApiKey) {
+            try {
+                // Use Claude to enhance/validate the data
+                const prompt = `Analyze this contact data and suggest improvements or flag any issues:
+                Name: ${dataToTransfer.contact}
+                Country: ${dataToTransfer.country}
+                Please respond with JSON format: {"validated": true/false, "suggestions": "...", "cleanedName": "...", "cleanedCountry": "..."}`;
+                
+                const claudeResponse = await callClaudeAPI(prompt, claudeApiKey);
+                console.log('Claude analysis:', claudeResponse);
+                
+                // Parse Claude's response and enhance the data
+                try {
+                    const analysis = JSON.parse(claudeResponse);
+                    if (analysis.cleanedName) {
+                        dataToTransfer.contact = analysis.cleanedName;
+                    }
+                    if (analysis.cleanedCountry) {
+                        dataToTransfer.country = analysis.cleanedCountry;
+                    }
+                    // Store Claude's analysis
+                    dataToTransfer.claudeAnalysis = analysis;
+                } catch (parseError) {
+                    console.log('Claude response was not JSON, storing as text');
+                    dataToTransfer.claudeAnalysis = { rawResponse: claudeResponse };
+                }
+            } catch (error) {
+                console.error('Claude API failed, proceeding without enhancement:', error);
+            }
+        }
+
+        // Save the approved data to storage
+        const { approvedEntries = [] } = await chrome.storage.local.get('approvedEntries');
+        const entryToSave = {
+            ...dataToTransfer,
+            timestamp: new Date().toISOString()
+        };
+        approvedEntries.push(entryToSave);
+        await chrome.storage.local.set({ approvedEntries });
+        console.log('Data saved to storage:', entryToSave);
+
+        // Get the destination URL from storage
+        const { destinationUrl } = await chrome.storage.sync.get('destinationUrl');
+        if (!destinationUrl) {
+            console.error('Destination URL is not set in the options.');
+            return;
+        }
+
+        const destinationTab = await chrome.tabs.create({ url: destinationUrl });
         await new Promise(resolve => {
             chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
                 if (tabId === destinationTab.id && changeInfo.status === 'complete') {
@@ -42,156 +101,30 @@ async function startTransferProcess() {
 
         await chrome.scripting.executeScript({
             target: { tabId: destinationTab.id },
-            function: fillFormWithData,
+            function: fillFormAndSubmit,
             args: [dataToTransfer]
         });
-        
-        return { success: true };
-
-    } catch (error) {
-        console.error('Transfer process failed:', error);
-        return { success: false, message: error.message };
     }
-}
-
-function scrapeTableData() {
-    try {
-        const table = document.querySelector('table.ws-table-all');
-        if (!table) return null;
-
-        for (let i = 1; i < table.rows.length; i++) {
-            const row = table.rows[i];
-            if (row.cells[2] && row.cells[2].innerText.trim() !== '') {
-                return {
-                    company: row.cells[0].innerText,
-                    contact: row.cells[1].innerText,
-                    country: row.cells[2].innerText
-                };
-            }
-        }
-        return null;
-    } catch (e) {
-        return null;
-    }
-}
-
-// CORRECTED LOGIC: This function now attempts to split the contact name.
-function fillFormWithData(data) {
-    try {
-        const contactNameParts = data.contact.split(' ');
-        const firstName = contactNameParts[0] || '';
-        const lastName = contactNameParts.slice(1).join(' ') || '';
-
-        document.getElementById('fname').value = firstName;
-        document.getElementById('lname').value = lastName;
+    
+    // Handle Claude API requests from popup/dashboard
+    if (request.action === 'askClaude') {
+        const { claudeApiKey } = await chrome.storage.sync.get('claudeApiKey');
         
-        const countryDropdown = document.getElementById('country');
-        
-        if (countryDropdown) {
-            const scrapedCountry = data.country.trim();
-            let countryFound = false;
-            
-            for (let i = 0; i < countryDropdown.options.length; i++) {
-                if (countryDropdown.options[i].text.trim() === scrapedCountry) {
-                    countryDropdown.value = countryDropdown.options[i].value;
-                    countryFound = true;
-                    break;
-                }
-            }
-            
-            if (!countryFound) {
-                console.error(`Country '${scrapedCountry}' not found in the dropdown list.`);
-            }
+        if (!claudeApiKey) {
+            sendResponse({ error: 'Claude API key not configured' });
+            return;
         }
         
-        alert('Form fields have been filled automatically!');
-    } catch (e) {
-        console.error('Failed to fill form fields:', e);
-    }
-}
-
-
-
-
-// exception for the country matchup
-/***chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'startTransfer') {
-        startTransferProcess().then(sendResponse);
-        return true;
+        try {
+            const response = await callClaudeAPI(request.prompt, claudeApiKey);
+            sendResponse({ success: true, response });
+        } catch (error) {
+            sendResponse({ error: error.message });
+        }
     }
 });
 
-async function startTransferProcess() {
-    try {
-        const urls = await chrome.storage.sync.get(['sourceUrl', 'destinationUrl']);
-        if (!urls.sourceUrl || !urls.destinationUrl) {
-            return { success: false, message: 'Please configure the source and destination URLs in the options page.' };
-        }
-
-        const [sourceTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (!sourceTab || sourceTab.url !== urls.sourceUrl) {
-            return { success: false, message: `Please navigate to the source page: ${urls.sourceUrl}` };
-        }
-
-        const [scrapingResult] = await chrome.scripting.executeScript({
-            target: { tabId: sourceTab.id },
-            function: scrapeTableData
-        });
-
-        const dataToTransfer = scrapingResult.result;
-        if (!dataToTransfer) {
-            return { success: false, message: 'Could not find the row for Yoshi Tannamuri in the table or the country is missing.' };
-        }
-        
-        const destinationTab = await chrome.tabs.create({ url: urls.destinationUrl });
-
-        await new Promise(resolve => {
-            chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
-                if (tabId === destinationTab.id && changeInfo.status === 'complete') {
-                    chrome.tabs.onUpdated.removeListener(listener);
-                    resolve();
-                }
-            });
-        });
-
-        await chrome.scripting.executeScript({
-            target: { tabId: destinationTab.id },
-            function: fillFormWithData,
-            args: [dataToTransfer]
-        });
-        
-        return { success: true };
-
-    } catch (error) {
-        console.error('Transfer process failed:', error);
-        return { success: false, message: error.message };
-    }
-}
-
-function scrapeTableData() {
-    try {
-        const table = document.querySelector('table.ws-table-all');
-        if (!table) return null;
-
-        for (let i = 1; i < table.rows.length; i++) {
-            const row = table.rows[i];
-            
-            if (row.cells[1] && row.cells[1].innerText.trim() === 'Yoshi Tannamuri' && row.cells[2] && row.cells[2].innerText.trim() !== '') {
-                return {
-                    company: row.cells[0].innerText,
-                    contact: row.cells[1].innerText,
-                    country: row.cells[2].innerText
-                };
-            }
-        }
-        return null;
-    } catch (e) {
-        return null;
-    }
-}
-
-// CORRECTED LOGIC: The country comparison is now case-insensitive.
-function fillFormWithData(data) {
+function fillFormAndSubmit(data) {
     try {
         const contactNameParts = data.contact.split(' ');
         const firstName = contactNameParts[0] || '';
@@ -199,30 +132,24 @@ function fillFormWithData(data) {
 
         document.getElementById('fname').value = firstName;
         document.getElementById('lname').value = lastName;
-        
+
         const countryDropdown = document.getElementById('country');
-        
         if (countryDropdown) {
             const scrapedCountry = data.country.trim().toLowerCase();
-            let countryFound = false;
-            
             for (let i = 0; i < countryDropdown.options.length; i++) {
                 const optionText = countryDropdown.options[i].text.trim().toLowerCase();
-                
                 if (optionText === scrapedCountry) {
                     countryDropdown.value = countryDropdown.options[i].value;
-                    countryFound = true;
                     break;
                 }
             }
-            
-            if (!countryFound) {
-                console.error(`Country '${data.country.trim()}' not found in the dropdown list.`);
-            }
         }
-        
-        alert('Form fields have been filled automatically!');
+
+        const submitButton = document.querySelector('input[type="submit"], button[type="submit"]');
+        if (submitButton) {
+            submitButton.click();
+        }
     } catch (e) {
         console.error('Failed to fill form fields:', e);
     }
-}***/ 
+}

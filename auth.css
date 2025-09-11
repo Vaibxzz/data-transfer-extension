@@ -1,0 +1,237 @@
+/* Reset */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  }
+  html, body {
+    min-height: 100%;   /* allow page to grow */
+    height: auto; 
+    overflow-y:auto;
+  }
+  
+  /* Gradient background */
+  .page-bg {
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(180deg, #6ea0ff 0%, #6c63ff 45%, #7b4cc7 100%);
+    z-index: -1;
+  }
+  
+  /* Container */
+  .auth-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;   /* center both horizontally & vertically */
+    height: 100vh;             /* full screen height */
+    padding: 20px;             /* small padding around */
+    overflow: visible;          /* no scroll */
+  }
+  
+  .auth-card {
+    width: 100%;
+    max-width: 340px;
+    background: #fff;
+    border-radius: 20px;
+    padding: 20px;
+    box-shadow: 0px 8px 30px rgba(0,0,0,0.1);
+    margin: 0 0 40px 0;
+  }
+  
+  /* Branding & Tabs */
+  .brand-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .logo-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .brand-mark {
+    width: 52px;
+    height: 52px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 22px;
+    background: linear-gradient(90deg, #ff7a6b, #ffd36b);
+    color: #fff;
+  }
+  .brand-name {
+    font-weight: 800;
+    font-size: 28px;
+    color: #212121;
+    letter-spacing: 1px;
+  }
+  
+  .tabs {
+    display: flex;
+    gap: 10px;
+    background: #f3f5f8;
+    padding: 6px;
+    border-radius: 12px;
+  }
+  .tab {
+    padding: 10px 24px;
+    border-radius: 10px;
+    border: none;
+    background: transparent;
+    font-weight: 600;
+    color: #6b7280;
+    cursor: pointer;
+  }
+  .tab.active {
+    background: #fff;
+    border: 2px solid rgba(99, 102, 241, 0.25);
+    box-shadow: 0 4px 10px rgba(99, 102, 241, 0.08);
+    color: #222;
+  }
+  
+  /* Sections */
+  .section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .section label {
+    font-size: 14px;
+    color: #333;
+    margin-top: 6px;
+  }
+  .input-wrap {
+    position: relative;
+  }
+  .input-wrap input {
+    width: 100%;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid #e6e7eb;
+    font-size: 15px;
+    color: #222;
+    background: #fff;
+  }
+  .input-wrap input::placeholder {
+    color: #bfc6cf;
+  }
+  .input-wrap input:focus {
+    outline: none;
+    border-color: #6c63ff;
+    box-shadow: 0 6px 14px rgba(108, 99, 255, 0.08);
+  }
+  
+  .password-toggle,
+  .password-toggle-signup,
+  .password-toggle-signup-confirm {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+  }
+  
+  .forgot {
+    align-self: flex-end;
+    color: #4f46e5;
+    text-decoration: none;
+    font-size: 13px;
+    margin-top: 4px;
+  }
+  
+  /* Buttons */
+  .login-btn,
+  .register-btn {
+    margin-top: 10px;
+    
+    padding: 14px 18px;   /* ⬅ same padding for both */
+    border-radius: 12px;
+    border: none;
+    font-weight: 700;
+    font-size: 15px;
+    cursor: pointer;
+    color: #6ea0ff;  /* ⬅ force white text for both */
+    background: linear-gradient(90deg, #6ea0ff, #7b4cc7); /* ⬅ same gradient */
+    box-shadow: 0 8px 20px rgba(124, 77, 199, 0.18);
+    transition: opacity 0.2s;
+   }
+  .login-btn {
+    background: #f9f9f9;
+    color: #6b7280;
+    border: 1px solid #e6e7eb;
+  }
+  .register-btn {
+    background: linear-gradient(90deg, #6ea0ff, #7b4cc7);
+    color: #fff;
+    box-shadow: 0 8px 20px rgba(124, 77, 199, 0.18);
+  }
+  
+  /* Divider */
+  .divider {
+    display: flex;
+    align-items: center;
+    margin: 20px 0;
+  }
+  .divider span {
+    flex: 1;
+    text-align: center;
+    color: #9aa0a8;
+    border-bottom: 1px solid #ececec;
+    line-height: 0.1;
+    padding: 12px 0;
+  }
+  
+  /* Social Buttons */
+  .social-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center; /* ⬅ centers text + icon */
+    gap: 10px;
+    width: 100%;
+    padding: 12px;
+    margin-top: 12px;   /* ⬅ even spacing */
+    border-radius: 12px;
+    border: 1px solid #e6e7eb;
+    background: #fff;
+    font-weight: 600;
+    font-size: 15px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .social-btn img {
+    width: 20px;
+    height: 20px;
+  }
+  
+  /* Footer */
+  .footer-links {
+    text-align: center;
+    padding-top: 8px;
+    color: #9aa0a8;
+    font-size: 13px;
+  }
+  .footer-links a {
+    color: #9aa0a8;
+    text-decoration: none;
+    margin: 0 6px;
+  }
+  
+  /* Responsive */
+  @media (max-width: 480px) {
+    .auth-card {
+      width: 92%;
+      padding: 20px;
+    }
+    .brand-name {
+      font-size: 22px;
+    }
+  }

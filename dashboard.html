@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KOSH Data Transfer Dashboard</title>
+    <!-- Flatpickr CSS (local copy) -->
+    <link rel="stylesheet" href="libs/flatpickr.min.css">
+
+    <style>
+        /* ---------- ORIGINAL STYLES (kept exactly) ---------- */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: #f8f9fa;
+            color: #333;
+            min-height: 100vh;
+        }
+        .header { background: white; border-bottom: 1px solid #e9ecef; padding: 16px 24px; }
+        .nav-container { display: flex; align-items: center; gap: 16px; max-width: 1400px; margin: 0 auto; }
+        .logo { width: 40px; height: 40px; background: linear-gradient(45deg, #ff6b35, #f7931e); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px; }
+        .nav-tabs { display: flex; gap: 4px; }
+        .nav-tab { padding: 8px 24px; background: none; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+        .nav-tab.active { background: #7c3aed; color: white; }
+        .nav-tab:not(.active) { color: #6b7280; background: #f3f4f6; }
+
+        /* user-avatar left as-is, but wrapped to allow drop-down */
+        .profile-wrapper { position: relative; margin-left: auto; display: flex; align-items: center; }
+        .user-avatar { width: 32px; height: 32px; border-radius: 50%; background: #7c3aed; color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; cursor: pointer; user-select: none; }
+
+        /* Profile menu (hidden by default) */
+        .profile-menu {
+            position: absolute;
+            right: 0;
+            top: 44px;
+            min-width: 220px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.08);
+            padding: 12px;
+            z-index: 1200;
+            display: none;
+        }
+        .profile-menu.show { display: block; }
+        .profile-card { display:flex; gap:12px; align-items:center; margin-bottom:10px; }
+        .profile-avatar { width:44px; height:44px; border-radius:50%; background:#eef2ff; display:flex; align-items:center; justify-content:center; color:#7c3aed; font-weight:700; }
+        .profile-meta { font-size:13px; color:#111827; }
+        .profile-meta .name { font-weight:600; }
+        .profile-meta .email { font-size:12px; color:#6b7280; }
+        .profile-actions { display:flex; gap:8px; justify-content:flex-end; }
+        .btn-logout { padding:8px 10px; border-radius:8px; border:1px solid #e5e7eb; background:#fff; cursor:pointer; font-size:13px; }
+        .btn-logout:hover { background:#f9fafb; }
+
+        /* rest of original styles retained below exactly as before */
+        .main-content { padding: 24px; max-width: 1400px; margin: 0 auto; }
+        .filters-row { display: flex; align-items: center; gap: 16px; margin-bottom: 32px; }
+        .date-picker { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border: 1px solid #d1d5db; border-radius: 6px; background: white; font-size: 14px; color: #374151; cursor: pointer; transition: all 0.2s ease; user-select: none; }
+        .date-picker:hover { border-color: #7c3aed; background-color: #fefbff; }
+        .date-picker:active { transform: translateY(1px); }
+        .dropdown { position: relative; }
+        .dropdown-button { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border: 1px solid #d1d5db; border-radius: 6px; background: white; font-size: 14px; color: #374151; cursor: pointer; }
+        .dropdown-button:hover { border-color: #9ca3af; }
+        .dropdown-menu { position: absolute; top: 100%; left: 0; min-width: 200px; background: white; border: 1px solid #e5e7eb; border-radius: 6px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); z-index: 1000; max-height: 200px; overflow-y: auto; display: none; }
+        .dropdown-menu.show { display: block; }
+        .dropdown-item { display: flex; align-items: center; padding: 8px 12px; font-size: 14px; color: #374151; cursor: pointer; border-bottom: 1px solid #f3f4f6; }
+        .dropdown-item:hover { background: #f9fafb; }
+        .dropdown-item input[type="checkbox"] { margin-right: 8px; }
+        .download-btn { margin-left: auto; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; background: white; cursor: pointer; font-size: 14px; transition: all 0.2s; }
+        .download-btn:hover { background: #f9fafb; border-color: #9ca3af; }
+        .stats-container { display: flex; gap: 24px; margin-bottom: 32px; justify-content: flex-start; }
+        .stat-card { background: white; padding: 24px; border-radius: 12px; text-align: center; min-width: 160px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border: 1px solid #e5e7eb; }
+        .stat-number { font-size: 48px; font-weight: 300; line-height: 1; margin-bottom: 8px; }
+        .stat-label { font-size: 14px; font-weight: 600; padding: 6px 12px; border-radius: 20px; }
+        .stat-card.total .stat-number { color: #6b7280; }
+        .stat-card.total .stat-label { background: #f3f4f6; color: #6b7280; }
+        .stat-card.processed .stat-number { color: #10b981; }
+        .stat-card.processed .stat-label { background: #d1fae5; color: #065f46; }
+        .stat-card.rejected .stat-number { color: #ef4444; }
+        .stat-card.rejected .stat-label { background: #fee2e2; color: #991b1b; }
+        .table-container { background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 16px 20px; background: #f9fafb; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb; font-size: 14px; cursor: pointer; position: relative; user-select: none; }
+        th:hover { background: #f3f4f6; }
+        td { padding: 16px 20px; border-bottom: 1px solid #f3f4f6; font-size: 14px; color: #6b7280; }
+        tr:hover { background: #f9fafb; }
+        tr:last-child td { border-bottom: none; }
+        .empty-state { text-align: center; padding: 60px 20px; color: #9ca3af; display: none; }
+        .sort-indicator { display: inline-block; margin-left: 6px; font-size: 10px; opacity: 0.5; }
+        .column-search-container { display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #e5e7eb; border-top: none; padding: 8px; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .column-search-container.active { display: block; }
+        .column-search { width: 100%; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; box-sizing: border-box; }
+        .column-search:focus { outline: none; border-color: #7c3aed; }
+        th.search-active { background: #7c3aed !important; color: white; }
+
+        /* small responsive tweaks so profile menu never pushes layout */
+        @media (max-width: 520px) {
+            .nav-container { padding-right: 8px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="nav-container">
+            <div class="logo">GD</div>
+            <div class="nav-tabs">
+                <button class="nav-tab active">Reconciliation</button>
+                <button class="nav-tab">Configuration</button>
+            </div>
+
+            <!-- profile wrapper added but visually same (avatar 'S' by default) -->
+            <div class="profile-wrapper" id="profile-wrapper">
+                <div class="user-avatar" id="user-avatar">S</div>
+
+                <!-- PROFILE MENU (hidden by default, no layout change) -->
+                <div class="profile-menu" id="profile-menu" aria-hidden="true">
+                    <div class="profile-card" id="profile-card">
+                        <div class="profile-avatar" id="profile-avatar">S</div>
+                        <div class="profile-meta">
+                            <div class="name" id="profile-name">Guest</div>
+                            <div class="email" id="profile-email">Not signed in</div>
+                        </div>
+                    </div>
+                    <div class="profile-actions">
+                        <button class="btn-logout" id="btn-logout">Logout</button>
+                    </div>
+                </div>
+            </div>
+            <!-- end profile -->
+        </div>
+    </div>
+
+    <div class="main-content">
+        <!-- Filters Row -->
+        <div class="filters-row">
+            <div class="date-picker" id="date-picker">
+                <span>📅</span>
+                <span id="date-range">01-10-2022 - 31-10-2022</span>
+                <!-- Hidden input for Flatpickr -->
+                <input type="text" id="date-input" style="display:none;" />
+            </div>
+
+            <div class="dropdown">
+                <button class="dropdown-button" id="dropdown-toggle">
+                    <span id="selected-category">Pharmacy</span>
+                    <span>▼</span>
+                </button>
+                <div class="dropdown-menu" id="dropdown-menu">
+                    <div class="dropdown-item">
+                        <input type="checkbox" id="pharmacy" checked>
+                        <label for="pharmacy">Pharmacy</label>
+                    </div>
+                    <div class="dropdown-item">
+                        <input type="checkbox" id="pharmacy1">
+                        <label for="pharmacy1">Pharmacy 1</label>
+                    </div>
+                    <div class="dropdown-item">
+                        <input type="checkbox" id="pharmacy2">
+                        <label for="pharmacy2">Pharmacy 2</label>
+                    </div>
+                    <div class="dropdown-item">
+                        <input type="checkbox" id="pharmacy3">
+                        <label for="pharmacy3">Pharmacy 3</label>
+                    </div>
+                    <div class="dropdown-item">
+                        <input type="checkbox" id="pharmacy4">
+                        <label for="pharmacy4">Pharmacy 4</label>
+                    </div>
+                </div>
+            </div>
+
+            <button class="download-btn" id="download-btn">⬇️</button>
+
+            <select id="retention-select" class="dropdown-button" style="width:auto; min-width:110px;">
+                <option value="30">30 days</option>
+                <option value="60">60 days</option>
+                <option value="90">90 days</option>
+            </select>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="stats-container">
+            <div class="stat-card total">
+                <div class="stat-number" id="total-entries">2</div>
+                <div class="stat-label">Total Entries</div>
+            </div>
+            <div class="stat-card processed">
+                <div class="stat-number" id="processed-entries">2</div>
+                <div class="stat-label">Processed</div>
+            </div>
+            <div class="stat-card rejected">
+                <div class="stat-number" id="rejected-entries">0</div>
+                <div class="stat-label">Rejected</div>
+            </div>
+        </div>
+
+        <!-- Data Table -->
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th data-column="firstName">
+                            First Name
+                            <span class="sort-indicator">⇅</span>
+                            <div class="column-search-container">
+                                <input type="text" class="column-search" placeholder="Search first name..." />
+                            </div>
+                        </th>
+                        <th data-column="lastName">
+                            Last Name
+                            <span class="sort-indicator">⇅</span>
+                            <div class="column-search-container">
+                                <input type="text" class="column-search" placeholder="Search last name..." />
+                            </div>
+                        </th>
+                        <th data-column="country">
+                            Country
+                            <span class="sort-indicator">⇅</span>
+                            <div class="column-search-container">
+                                <input type="text" class="column-search" placeholder="Search country..." />
+                            </div>
+                        </th>
+                        <th data-column="processTime">
+                            Process Time
+                            <span class="sort-indicator">⇅</span>
+                            <div class="column-search-container">
+                                <input type="text" class="column-search" placeholder="Search process time..." />
+                            </div>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="entries-table-body">
+                    <tr>
+                        <td>Maria</td>
+                        <td>Anders</td>
+                        <td>Germany</td>
+                        <td>Invalid Date</td>
+                    </tr>
+                    <tr>
+                        <td>Maria</td>
+                        <td>Anders</td>
+                        <td>Germany</td>
+                        <td>Invalid Date</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div id="empty-state" class="empty-state">
+                <div>No entries found</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Flatpickr JS (local copy) -->
+    <!-- Flatpickr JS (local copy) -->
+<script src="libs/flatpickr.min.js"></script>
+
+<!-- Firebase SDK (compat) -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js" defer></script>
+
+<!-- Initialize Firebase for nimble-falcon-38ada (runs after SDK because scripts above are deferred) -->
+<script>
+  // If your site already has an init from hosting (__/firebase/init.js), skip this init block.
+  // This block ensures dashboard.js has firebase available even if hosting init isn't present.
+  (function initFirebaseDashboard(){
+    if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length) {
+      // already initialized by hosting init; expose handles
+      window.__KOSH__ = window.__KOSH__ || { auth: firebase.auth(), firestore: firebase.firestore(), firebaseConfig: firebase.app().options };
+      return;
+    }
+    // explicit config (use the same project shown in the page console)
+    const firebaseConfig = {
+      apiKey: "AIzaSyAddUryOENzoRqCCaIO_5GPduBsYGI512k",
+      authDomain: "nimble-falcon-38ada.firebaseapp.com",
+      projectId: "nimble-falcon-38ada",
+      storageBucket: "nimble-falcon-38ada.firebasestorage.app",
+      messagingSenderId: "1094058263345"
+    };
+    if (!window.firebase) {
+      console.error('Firebase SDK not loaded yet — dashboard will wait.');
+      return;
+    }
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    window.__KOSH__ = { auth: firebase.auth(), firestore: firebase.firestore(), firebaseConfig };
+  })();
+</script>
+
+<!-- Dashboard script (deferred so it runs after Firebase init) -->
+<script src="dashboard.js" defer></script>
+</body>
+</html>

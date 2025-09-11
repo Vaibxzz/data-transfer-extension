@@ -1,0 +1,17 @@
+node_modules/
+.git/
+*.log
+*.lock
+.vscode/
+.DS_Store
+coverage/
+build/
+dist/
+public/
+*.png
+*.jpg
+*.jpeg
+*.mp4
+*.mov
+*.zip
+.idea/

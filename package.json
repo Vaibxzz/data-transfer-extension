@@ -1,0 +1,16 @@
+{
+  "name": "data-transfer-extension",
+  "version": "1.0.0",
+  "main": "background.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "firebase": "^12.2.1",
+    "flatpickr": "^4.6.13"
+  }
+}
