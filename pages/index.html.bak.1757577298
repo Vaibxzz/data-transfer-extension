@@ -1,0 +1,7 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Test Deploy</title></head>
+<body><h1>TEST DEPLOY SUCCESS</h1><p>time: $(date -u)</p>
+</body>
+<!-- DEMO / SAFETY BANNER: Inserted to reduce phishing signals -->
+<!-- end demo banner -->
+</html>
