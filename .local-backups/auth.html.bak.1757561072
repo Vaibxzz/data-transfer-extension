@@ -113,10 +113,10 @@
   <!-- Firebase SDK -->
   <!-- Firebase SDK via CDN -->
 <!-- Firebase SDK (Compat) loaded by Hosting -->
-<script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
-<script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-
+<script defer src="/__/firebase/9.22.2/firebase-app-compat.js"></script>
+<script defer src="/__/firebase/9.22.2/firebase-auth-compat.js"></script>
+<script defer src="/__/firebase/9.22.2/firebase-firestore-compat.js"></script>
+<script defer src="/__/firebase/init.js"></script>
 
 <script>
   // expose handles after hosting init runs
@@ -145,6 +145,8 @@ document.addEventListener('DOMContentLoaded', function(){
     btn.addEventListener('click', function(e){
       e.preventDefault();
       const text = (btn.innerText || btn.textContent || btn.className).trim();
+      console.log('TEST CLICK:', text, 'classes=', btn.className);
+      alert('TEST CLICK: ' + (text || btn.className));
     });
   });
   console.log('TEST SCRIPT: click handlers attached for:', sel);

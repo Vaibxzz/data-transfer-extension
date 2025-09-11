@@ -113,10 +113,10 @@
   <!-- Firebase SDK -->
   <!-- Firebase SDK via CDN -->
 <!-- Firebase SDK (Compat) loaded by Hosting -->
-<script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
-<script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-
+<script defer src="/__/firebase/9.22.2/firebase-app-compat.js"></script>
+<script defer src="/__/firebase/9.22.2/firebase-auth-compat.js"></script>
+<script defer src="/__/firebase/9.22.2/firebase-firestore-compat.js"></script>
+<script defer src="/__/firebase/init.js"></script>
 
 <script>
   // expose handles after hosting init runs

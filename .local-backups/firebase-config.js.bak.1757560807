@@ -1,0 +1,11 @@
+/* LOCAL only — DO NOT COMMIT this file to any public repo.
+   Firebase web app config for nimble-falcon-38ada */
+window.__FIREBASE_CONFIG__ = {
+  apiKey: "AIzaSyAddUryOENzoRqCCaIO_5GPduBsYGI512k",
+  authDomain: "nimble-falcon-38ada.firebaseapp.com",
+  projectId: "nimble-falcon-38ada",
+  storageBucket: "nimble-falcon-38ada.firebasestorage.app",
+  messagingSenderId: "1094058263345",
+  appId: "1:1094058263345:web:6ce5920eb3bca28b576610",
+  measurementId: "G-5V8LYL5P0Z"
+};
