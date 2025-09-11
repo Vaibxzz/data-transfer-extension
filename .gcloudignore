@@ -1,4 +1,3 @@
-# Exclude client-only, extension and dev files that should not run on the server
 background.js
 content.js
 popup.html
