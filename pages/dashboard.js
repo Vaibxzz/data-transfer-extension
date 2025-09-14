@@ -508,23 +508,60 @@ document.addEventListener('DOMContentLoaded', () => {
   
     // NAV TABS -> Configuration redirect (keeps your robust fallback logic)
     document.querySelectorAll('.nav-tab').forEach(tab => {
-      tab.addEventListener('click', (e) => {
-        const clicked = e.currentTarget || e.target;
-        const label = (clicked.textContent || clicked.innerText || '').trim();
-        document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-        clicked.classList.add('active');
-        if (label === 'Configuration') {
-          if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
-            try { chrome.tabs.create({ url: chrome.runtime.getURL('options.html'), active: true }); }
-            catch (err) { if (chrome.runtime.openOptionsPage) chrome.runtime.openOptionsPage(); else window.location.href = 'options.html'; }
-          } else {
-            const rel = 'options.html'; const absRoot = window.location.origin + '/options.html';
-            fetch(rel, { method:'HEAD' }).then(resp => { if (resp.ok) window.location.href = rel; else fetch(absRoot,{method:'HEAD'}).then(a => { if (a.ok) window.location.href = absRoot; else window.location.href = rel; }).catch(()=>window.location.href=rel); }).catch(()=>window.location.href=rel);
+        tab.addEventListener('click', async (e) => {
+          const clicked = e.currentTarget || e.target;
+          const label = (clicked.textContent || clicked.innerText || '').trim();
+      
+          // UI highlight
+          document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+          clicked.classList.add('active');
+      
+          if (label === 'Configuration') {
+            // If inside extension context, open extension options reliably
+            if (typeof chrome !== 'undefined' && chrome.runtime) {
+              try {
+                // preferred: openOptionsPage (works for most Chrome/Edge versions)
+                if (typeof chrome.runtime.openOptionsPage === 'function') {
+                  chrome.runtime.openOptionsPage();
+                  return;
+                }
+                // fallback: open an extension tab with URL
+                if (chrome.runtime.getURL) {
+                  chrome.tabs && chrome.tabs.create
+                    ? chrome.tabs.create({ url: chrome.runtime.getURL('options.html'), active: true })
+                    : window.location.href = chrome.runtime.getURL('options.html');
+                  return;
+                }
+              } catch (err) {
+                console.warn('Extension options open failed, falling back to web options:', err);
+              }
+            }
+      
+            // Web fallback: hosted options page (ensure this path exists on Pages)
+            const hostedOptions = window.location.origin + '/options.html';
+            try {
+              // Optional: check host availability quickly (non-blocking)
+              const resp = await fetch(hostedOptions, { method: 'HEAD' });
+              if (resp.ok) {
+                window.location.href = hostedOptions;
+              } else {
+                // final fallback: relative path
+                window.location.href = 'options.html';
+              }
+            } catch (err) {
+              // network or CORS failure: fallback to relative path
+              window.location.href = 'options.html';
+            }
+      
+            // Make sure not to keep the tab visually active
+            setTimeout(() => {
+              document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+              const first = document.querySelector('.nav-tab');
+              if (first) first.classList.add('active');
+            }, 100);
           }
-          setTimeout(()=>{ document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active')); const first = document.querySelector('.nav-tab'); if (first) first.classList.add('active'); },100);
-        }
+        });
       });
-    });
   
     // Initial setup
     setupTableInteractions();
