@@ -4,6 +4,21 @@
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Dashboard DOM loaded');
 
+    // --- AUTH CHECK (redirect to login if missing) ---
+    const authData = localStorage.getItem('kosh_auth');
+    if (!authData) {
+        console.warn("[Dashboard] No auth found, redirecting to login...");
+        window.location.replace("index.html"); // or login.html depending on your file
+        return; // stop running the rest of dashboard.js
+    }
+    try {
+        window.__KOSH_AUTH__ = JSON.parse(authData);
+    } catch (e) {
+        console.error("[Dashboard] Invalid kosh_auth data:", e);
+        window.location.replace("index.html");
+        return;
+    }
+
     // --- FIREBASE INITIALIZATION ---
     // Assumes Firebase scripts are included in HTML and firebase is available globally
     // Replace with your actual config
