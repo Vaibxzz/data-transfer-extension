@@ -1,7 +1,7 @@
 /* signup.js — email + Google + Outlook + redirect */
 (function(){
   'use strict';
-  const API_BASE_URL = "http://localhost:8080"; // <- update if needed
+  const API_BASE_URL = "https://kosh-backend-1094058263345.us-central1.run.app"; // <- update if needed
 
   function getFirebaseHandles(){
     try {

@@ -13,3 +13,4 @@ window.__FIREBASE_CONFIG__ = {
   appId: "1:1094058263345:web:6ce5920eb3bca28b576610",
   measurementId: "G-5V8LYL5P0Z"
 };
+window.API_BASE_URL = "https://kosh-backend-1094058263345.us-central1.run.app";
