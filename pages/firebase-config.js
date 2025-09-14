@@ -1,14 +1,15 @@
 /*
-  pages/firebase-config.js
-  Replace the placeholder values with your project's config from Firebase console
-  Example:
-  var FIREBASE_CONFIG = { apiKey: "...", authDomain: "...", projectId: "...", ... }
+  Provide your Firebase config here.
+  Replace the placeholder values with your project's values from Firebase console.
 */
-window.FIREBASE_CONFIG = {
-  apiKey: "<YOUR_API_KEY>",
-  authDomain: "<YOUR_AUTH_DOMAIN>",        // e.g. "your-app.firebaseapp.com"
-  projectId: "<YOUR_PROJECT_ID>",
-  storageBucket: "<YOUR_STORAGE_BUCKET>",
-  messagingSenderId: "<YOUR_MESSAGING_SENDER_ID>",
-  appId: "<YOUR_APP_ID>"
+// firebase-config.js
+// Generated during Cloudflare Pages build from env vars
+window.__FIREBASE_CONFIG__ = {
+  apiKey: "AIzaSyAddUryOENzoRqCCaIO_5GPduBsYGI512k",
+  authDomain: "nimble-falcon-38ada.firebaseapp.com",
+  projectId: "nimble-falcon-38ada",
+  storageBucket: "nimble-falcon-38ada.firebasestorage.app",
+  messagingSenderId: "1094058263345",
+  appId: "1:1094058263345:web:6ce5920eb3bca28b576610",
+  measurementId: "G-5V8LYL5P0Z"
 };

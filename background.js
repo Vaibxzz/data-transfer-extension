@@ -1,155 +1,119 @@
-// Claude API integration
-const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
+// background.js (MV3 service worker)
+// Listens for action click or messages from UI, injects a scraper into the active tab,
+// collects W3C-ish table data and stores it into chrome.storage for the UI page to display.
 
-async function callClaudeAPI(prompt, apiKey) {
-    try {
-        const response = await fetch(CLAUDE_API_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': apiKey,
-                'anthropic-version': '2023-06-01'
-            },
-            body: JSON.stringify({
-                model: 'claude-3-haiku-20240307',
-                max_tokens: 1000,
-                messages: [{
-                    role: 'user',
-                    content: prompt
-                }]
-            })
-        });
+'use strict';
 
-        if (!response.ok) {
-            throw new Error(`Claude API error: ${response.status} ${response.statusText}`);
+// Utility: run scraper in the page and return the result
+async function runScraperInTab(tabId) {
+  try {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      // function to run in page context: returns a serializable object
+      func: () => {
+        // Find the first table that looks like a W3C table or a data table
+        const table =
+          document.querySelector('table.w3-table') ||
+          document.querySelector('table[data-w3c]') ||
+          document.querySelector('table') ||
+          null;
+
+        if (!table) {
+          return { ok: false, error: 'No table element found on the page' };
         }
 
-        const data = await response.json();
-        return data.content[0].text;
-    } catch (error) {
-        console.error('Claude API call failed:', error);
-        throw error;
-    }
+        // Extract headers - prefer thead th, else first row th/td
+        let headers = [];
+        const thead = table.querySelector('thead');
+        if (thead) {
+          headers = Array.from(thead.querySelectorAll('th')).map(t => t.textContent.trim());
+        }
+        if (!headers.length) {
+          const firstRow = table.querySelector('tr');
+          if (firstRow) {
+            headers = Array.from(firstRow.children).map((c, idx) => {
+              const txt = c.textContent.trim();
+              return txt || `col${idx + 1}`;
+            });
+            // If firstRow used as headers, skip it for row parsing below
+            firstRow.removeAttribute('data-kosh-temp-header');
+          }
+        }
+
+        // Build rows: iterate over tr elements, skip header row if it's thead or first <tr> when it had ths
+        const rows = [];
+        const trs = Array.from(table.querySelectorAll('tr'));
+        for (const tr of trs) {
+          // skip empty rows
+          const cells = Array.from(tr.children).filter(n => /td|th/i.test(n.tagName));
+          if (!cells.length) continue;
+
+          // If header-like row (all th), skip it
+          const allTh = cells.every(c => c.tagName.toLowerCase() === 'th');
+          if (allTh) continue;
+
+          const row = {};
+          cells.forEach((cell, i) => {
+            const key = headers[i] || `col${i + 1}`;
+            // innerText may be preferable to get visible text
+            row[key] = cell.innerText.trim();
+          });
+          // only add non-empty rows
+          if (Object.keys(row).length) rows.push(row);
+        }
+
+        return { ok: true, headers, rows, rowCount: rows.length };
+      }
+    });
+    return result;
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
 }
 
-// SINGLE message listener to handle all actions
-chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
-    
-    if (request.action === 'proceedTransfer') {
-        const dataToTransfer = request.data;
+// Save results to chrome.storage and notify UI
+async function handleScrape(tabId) {
+  const res = await runScraperInTab(tabId);
+  const time = new Date().toISOString();
+  const payload = { fetchedAt: time, result: res };
 
-        // Get Claude API key from storage
-        const { claudeApiKey } = await chrome.storage.sync.get('claudeApiKey');
-        
-        if (claudeApiKey) {
-            try {
-                // Use Claude to enhance/validate the data
-                const prompt = `Analyze this contact data and suggest improvements or flag any issues:
-                Name: ${dataToTransfer.contact}
-                Country: ${dataToTransfer.country}
-                Please respond with JSON format: {"validated": true/false, "suggestions": "...", "cleanedName": "...", "cleanedCountry": "..."}`;
-                
-                const claudeResponse = await callClaudeAPI(prompt, claudeApiKey);
-                console.log('Claude analysis:', claudeResponse);
-                
-                // Parse Claude's response and enhance the data
-                try {
-                    const analysis = JSON.parse(claudeResponse);
-                    if (analysis.cleanedName) {
-                        dataToTransfer.contact = analysis.cleanedName;
-                    }
-                    if (analysis.cleanedCountry) {
-                        dataToTransfer.country = analysis.cleanedCountry;
-                    }
-                    // Store Claude's analysis
-                    dataToTransfer.claudeAnalysis = analysis;
-                } catch (parseError) {
-                    console.log('Claude response was not JSON, storing as text');
-                    dataToTransfer.claudeAnalysis = { rawResponse: claudeResponse };
-                }
-            } catch (error) {
-                console.error('Claude API failed, proceeding without enhancement:', error);
-            }
-        }
+  await chrome.storage.local.set({ lastScrape: payload });
+  // notify all UI pages
+  chrome.runtime.sendMessage({ type: 'SCRAPE_COMPLETE', payload });
+  return payload;
+}
 
-        // Save the approved data to storage
-        const { approvedEntries = [] } = await chrome.storage.local.get('approvedEntries');
-        const entryToSave = {
-            ...dataToTransfer,
-            timestamp: new Date().toISOString()
-        };
-        approvedEntries.push(entryToSave);
-        await chrome.storage.local.set({ approvedEntries });
-        console.log('Data saved to storage:', entryToSave);
-
-        // Get the destination URL from storage
-        const { destinationUrl } = await chrome.storage.sync.get('destinationUrl');
-        if (!destinationUrl) {
-            console.error('Destination URL is not set in the options.');
-            return;
-        }
-
-        const destinationTab = await chrome.tabs.create({ url: destinationUrl });
-        await new Promise(resolve => {
-            chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
-                if (tabId === destinationTab.id && changeInfo.status === 'complete') {
-                    chrome.tabs.onUpdated.removeListener(listener);
-                    resolve();
-                }
-            });
-        });
-
-        await chrome.scripting.executeScript({
-            target: { tabId: destinationTab.id },
-            function: fillFormAndSubmit,
-            args: [dataToTransfer]
-        });
-    }
-    
-    // Handle Claude API requests from popup/dashboard
-    if (request.action === 'askClaude') {
-        const { claudeApiKey } = await chrome.storage.sync.get('claudeApiKey');
-        
-        if (!claudeApiKey) {
-            sendResponse({ error: 'Claude API key not configured' });
-            return;
-        }
-        
-        try {
-            const response = await callClaudeAPI(request.prompt, claudeApiKey);
-            sendResponse({ success: true, response });
-        } catch (error) {
-            sendResponse({ error: error.message });
-        }
-    }
+// respond to toolbar action (click)
+chrome.action.onClicked.addListener(async (tab) => {
+  if (!tab || !tab.id) return;
+  const info = await handleScrape(tab.id);
+  // open the background UI page in a new tab to show results (optional)
+  const url = chrome.runtime.getURL('background.html');
+  chrome.tabs.create({ url });
 });
 
-function fillFormAndSubmit(data) {
-    try {
-        const contactNameParts = data.contact.split(' ');
-        const firstName = contactNameParts[0] || '';
-        const lastName = contactNameParts.slice(1).join(' ') || '';
-
-        document.getElementById('fname').value = firstName;
-        document.getElementById('lname').value = lastName;
-
-        const countryDropdown = document.getElementById('country');
-        if (countryDropdown) {
-            const scrapedCountry = data.country.trim().toLowerCase();
-            for (let i = 0; i < countryDropdown.options.length; i++) {
-                const optionText = countryDropdown.options[i].text.trim().toLowerCase();
-                if (optionText === scrapedCountry) {
-                    countryDropdown.value = countryDropdown.options[i].value;
-                    break;
-                }
-            }
+// also respond to messages from UI (background.html)
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg && msg.type === 'SCRAPE_NOW') {
+    (async () => {
+      try {
+        // if sender.tab present, target that; else use active tab
+        let targetTabId = (sender && sender.tab && sender.tab.id) || null;
+        if (!targetTabId) {
+          const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (tabs && tabs[0]) targetTabId = tabs[0].id;
         }
-
-        const submitButton = document.querySelector('input[type="submit"], button[type="submit"]');
-        if (submitButton) {
-            submitButton.click();
+        if (!targetTabId) {
+          sendResponse({ ok: false, error: 'No active tab to scrape' });
+          return;
         }
-    } catch (e) {
-        console.error('Failed to fill form fields:', e);
-    }
-}
+        const payload = await handleScrape(targetTabId);
+        sendResponse({ ok: true, payload });
+      } catch (e) {
+        sendResponse({ ok: false, error: String(e) });
+      }
+    })();
+    // indicate we'll send response asynchronously
+    return true;
+  }
+});

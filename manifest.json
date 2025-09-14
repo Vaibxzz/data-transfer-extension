@@ -1,67 +1,24 @@
 {
   "manifest_version": 3,
   "name": "Kosh Data Transfer",
-  "version": "5.0.5",
-  "description": "Secure data transfer extension with authentication.",
-  "permissions": [
-    "activeTab",
-    "scripting",
-    "storage",
-    "tabs",
-    "identity"
-  ],
-  "host_permissions": [
-    "<all_urls>",
-    "https://accounts.google.com/*",
-    "https://login.microsoftonline.com/*",
-    "https://graph.microsoft.com/*",
-    "https://www.googleapis.com/*"
-  ],
+  "version": "1.0.0",
+  "description": "Kosh extension - data transfer dashboard",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Kosh Data Transfer"
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
   },
   "background": {
     "service_worker": "background.js"
   },
-  "options_ui": {
-    "page": "auth.html",
-    "open_in_tab": true
-  },
-  "oauth2": {
-    "client_id": "325372367528-ddkacvuuqtll76u0gjcvsu83ovt9fib1.apps.googleusercontent.com",
-    "scopes": [
-      "openid",
-      "email",
-      "profile",
-      "https://www.googleapis.com/auth/userinfo.email",
-      "https://www.googleapis.com/auth/userinfo.profile"
-    ]
-  },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "auth.html",
-        "signup.html",
-        "dashboard.html",
-        "auth-callback.html",
-        "assets/google-icon.svg",
-        "assets/outlook-icon.svg",
-        "assets/*"
-      ],
-      "matches": ["<all_urls>"]
-    }
-  ],
-  "content_scripts": [
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ],
-  "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
-  }
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["<all_urls>"]
 }

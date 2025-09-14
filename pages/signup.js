@@ -1,201 +1,205 @@
-/* signup.js — robust auth wiring for Kosh */
+/* signup.js — email + Google + Outlook + redirect */
 (function(){
   'use strict';
-  const API_BASE_URL = "https://kosh-backend-109405826345.us-central1.run.app".replace('109405826345','1094058263345'); // keep your backend URL
-  // NOTE: Replace above if needed; or allow existing value.
+  const API_BASE_URL = "http://localhost:8080"; // <- update if needed
 
-  // safe firebase handle getter
   function getFirebaseHandles(){
     try {
-      if (window.__KOSH__) return { auth: window.__KOSH__.auth, firestore: window.__KOSH__.firestore };
-      if (typeof firebase !== 'undefined' && Array.isArray(firebase.apps) && firebase.apps.length > 0) {
-        return {
-          auth: typeof firebase.auth === 'function' ? firebase.auth() : null,
-          firestore: typeof firebase.firestore === 'function' ? firebase.firestore() : null
-        };
+      if (window.__KOSH__ && window.__KOSH__.ready) {
+        return { auth: window.__KOSH__.auth, firestore: window.__KOSH__.firestore, config: window.__KOSH__.config };
       }
-    } catch(e){ console.debug('firebase handles unavailable', e && e.message); }
-    return { auth: null, firestore: null };
+      if (typeof firebase !== 'undefined' && Array.isArray(firebase.apps) && firebase.apps.length>0) {
+        return { auth: typeof firebase.auth === 'function' ? firebase.auth() : null, firestore: typeof firebase.firestore === 'function' ? firebase.firestore() : null };
+      }
+    } catch(e) { console.debug('getFirebaseHandles err', e && e.message || e); }
+    return { auth:null, firestore:null };
   }
 
-  let { auth, firestore } = getFirebaseHandles();
-  function refreshFirebaseHandles(){ const h=getFirebaseHandles(); auth = auth || h.auth; firestore = firestore || h.firestore; }
+  let { auth } = getFirebaseHandles();
+  function refreshFirebaseHandles(){ const h = getFirebaseHandles(); auth = auth || h.auth; }
 
-  function isValidEmail(e){return /\S+@\S+\.\S+/.test(e);}
-  function showError(msg){ console.error('UI error:', msg); alert(msg); }
-  function setLocalSession(user, method='local'){ localStorage.setItem('kosh_auth', JSON.stringify({user,method,ts:Date.now(),expiry:Date.now()+24*3600*1000})); console.log('Authenticated user set locally:', user); }
+  function el(sel){ return document.querySelector(sel); }
+  function $all(sel){ return Array.from(document.querySelectorAll(sel)); }
+  function isValidEmail(email){ return /\S+@\S+\.\S+/.test(email); }
+  function showError(msg){ console.error(msg); alert(msg); }
+  function showSuccess(msg){ console.log(msg); /* optional UI toast */ }
+
+  function setLocalSession(user, method='local'){
+    try {
+      const rec = { user, method, ts:Date.now(), expiry: Date.now()+86400000 };
+      localStorage.setItem('kosh_auth', JSON.stringify(rec));
+      console.log('Authenticated user set locally:', user);
+    } catch(e){}
+  }
 
   async function handleAuthSuccess(resp, method='email'){
     try {
       refreshFirebaseHandles();
       if (resp && resp.token && auth && typeof auth.signInWithCustomToken === 'function') {
-        console.log('Signing into Firebase with custom token...');
-        await auth.signInWithCustomToken(resp.token);
-        console.log('Signed into Firebase with custom token');
-        setLocalSession(resp.user, method);
-        // onAuthStateChanged in firebase-init will redirect to dashboard; if not, do fallback:
-        setTimeout(()=>{ if (!location.pathname.endsWith('/dashboard.html')) location.replace('/dashboard.html'); }, 800);
-        return;
+        try {
+          await auth.signInWithCustomToken(resp.token);
+          setLocalSession(resp.user || { email: resp.user?.email }, method);
+          window.location.href = 'dashboard.html';
+          return;
+        } catch(e){
+          console.warn('custom token sign-in failed', e);
+        }
       }
       if (resp && resp.user) {
         setLocalSession(resp.user, method);
-        location.replace('/dashboard.html');
+        window.location.href = 'dashboard.html';
+        return;
       }
-    } catch (e) {
+      showError('Auth succeeded but no user info.');
+    } catch(e){
       console.error('handleAuthSuccess error', e);
-      if (resp && resp.user) { setLocalSession(resp.user, method); location.replace('/dashboard.html'); }
-      else showError('Authentication succeeded but final sign-in failed.');
+      if (resp && resp.user){ setLocalSession(resp.user, method); window.location.href='dashboard.html'; }
     }
   }
 
-  async function postJSON(path, body){
-    const res = await fetch(path, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
-    const json = await res.json().catch(()=>({success:false, message:'invalid-json'}));
-    return Object.assign({ ok: res.ok }, json);
+  async function postJson(url, body){
+    const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const json = await res.json().catch(()=>({}));
+    return { ok: res.ok, status: res.status, body: json };
   }
 
-  // login handler
-  async function handleLogin(ev){
-    ev && ev.preventDefault();
-    const email = (document.getElementById('login-email')||{}).value?.trim();
-    const password = (document.getElementById('login-password')||{}).value || '';
+  // Email login
+  async function doLogin(){
+    const email = el('#login-email')?.value?.trim() || '';
+    const password = el('#login-password')?.value || '';
     if (!isValidEmail(email)) return showError('Enter a valid email');
-    if (!password || password.length < 6) return showError('Enter a password (>=6 chars)');
+    if (!password || password.length < 6) return showError('Enter a password >= 6 chars');
+
+    const btn = el('.login-btn');
+    if (btn){ btn.textContent='Signing in...'; btn.disabled=true; }
     try {
-      const r = await postJSON(`${API_BASE_URL}/login`, { email, password });
-      if (!r.success) return showError(r.message || 'Login failed');
-      await handleAuthSuccess(r, 'email');
-    } catch (e) {
-      console.error('login error', e);
-      showError('Server error — try again later.');
-    }
+      const r = await postJson(API_BASE_URL + '/login', { email, password });
+      if (!r.ok) return showError(r.body?.message || 'Login failed');
+      await handleAuthSuccess(r.body, 'email');
+    } catch(e){
+      console.error('login err', e); showError('Server error');
+    } finally { if (btn){ btn.textContent='Log In'; btn.disabled=false; } }
   }
 
-  // register handler
-  async function handleRegister(ev){
-    ev && ev.preventDefault();
-    const email = (document.getElementById('signup-email')||{}).value?.trim();
-    const password = (document.getElementById('signup-password')||{}).value || '';
-    const confirm = (document.getElementById('signup-password-confirm')||{}).value || '';
-    const name = email ? email.split('@')[0] : '';
+  // Register
+  async function doRegister(){
+    const email = el('#signup-email')?.value?.trim() || '';
+    const name = el('#signup-name')?.value?.trim() || email.split('@')[0] || '';
+    const password = el('#signup-password')?.value || '';
+    const confirm = el('#signup-password-confirm')?.value || '';
     if (!isValidEmail(email)) return showError('Enter a valid email');
-    if (password.length < 6) return showError('Enter a password (>=6 chars)');
+    if (!password || password.length < 6) return showError('Enter a password >=6 chars');
     if (password !== confirm) return showError('Passwords do not match');
+
+    const btn = el('.register-btn');
+    if (btn){ btn.textContent='Registering...'; btn.disabled=true; }
     try {
-      const r = await postJSON(`${API_BASE_URL}/register`, { email, password, name });
-      if (!r.success) return showError(r.message || 'Registration failed');
-      await handleAuthSuccess(r, 'email');
-    } catch (e) {
-      console.error('register error', e);
-      showError('Server error — try again later.');
-    }
+      const r = await postJson(API_BASE_URL + '/register', { email, password, name });
+      if (!r.ok) return showError(r.body?.message || 'Register failed');
+      await handleAuthSuccess(r.body, 'email');
+    } catch(e){
+      console.error('register err', e); showError('Server error');
+    } finally { if (btn){ btn.textContent='Sign Up'; btn.disabled=false; } }
   }
 
-  // Google popup sign-in
-  async function initiateGoogleAuth(ev){
-    ev && ev.preventDefault();
+  // Google auth
+  async function doGoogle(){
     refreshFirebaseHandles();
-    if (!auth || typeof auth.signInWithPopup !== 'function') return showError('Google sign-in not available (Firebase not initialized).');
+    const btn = el('.google-btn');
+    if (btn){ btn.textContent='Authenticating...'; btn.disabled=true; }
+    if (!auth || typeof auth.signInWithPopup !== 'function') {
+      showError('Google sign-in not available (Firebase not initialized).');
+      if (btn){ btn.textContent='Continue with Google'; btn.disabled=false; }
+      return;
+    }
     try {
       const provider = new firebase.auth.GoogleAuthProvider();
-      const result = await auth.signInWithPopup(provider);
-      const user = result.user;
+      const res = await auth.signInWithPopup(provider);
+      const user = res.user;
       if (user) {
-        const idToken = await user.getIdToken().catch(()=>null);
-        // optionally send idToken to backend (session cookie)
-        setLocalSession({ email: user.email, name: user.displayName, avatar: user.photoURL }, 'google');
-        // redirect will be handled by firebase onAuthStateChanged above; fallback:
-        setTimeout(()=> location.replace('/dashboard.html'), 400);
-      }
-    } catch (e) {
-      console.error('Google login error', e);
-      showError('Google authentication failed: '+(e?.message||'Unknown'));
-    }
+        setLocalSession({ email:user.email, name:user.displayName, avatar:user.photoURL }, 'google');
+        window.location.href = 'dashboard.html';
+      } else showError('Google sign-in returned no user.');
+    } catch(e){
+      console.error('google err', e); showError('Google auth failed: ' + (e?.message || ''));
+    } finally { if (btn){ btn.textContent='Continue with Google'; btn.disabled=false; } }
   }
 
-  // Microsoft Outlook (MSAL-like implicit) — open popup and poll for fragment
-  function initiateOutlookAuth(ev){
-    ev && ev.preventDefault();
-    const clientId = "<YOUR_AZURE_CLIENT_ID>"; // replace or set in firebase console OAuth if using server side
-    const redirectUri = window.location.origin + '/auth.html'; // must match Azure app redirect
-    const scopes = encodeURIComponent('openid profile email User.Read');
-    const authUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize' +
-      `?client_id=${encodeURIComponent(clientId)}&response_type=token&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&scope=${scopes}&response_mode=fragment&state=${Date.now()}`;
+  // Outlook (simple popup implicit flow)
+  function doOutlook(){
+    const clientId = "663c904c-c20d-4a9b-9529-67f0d144462d"; // replace or keep if configured
+    const redirectUri = window.location.origin + '/'; // ensure allowed in Azure app
+    const scope = encodeURIComponent('openid profile email User.Read');
+    const url = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize' +
+                '?client_id=' + encodeURIComponent(clientId) +
+                '&response_type=token' +
+                '&redirect_uri=' + encodeURIComponent(redirectUri) +
+                '&scope=' + scope +
+                '&response_mode=fragment' +
+                '&state=' + Date.now();
 
-    const w = 520, h = 620;
-    const left = Math.max(0, (screen.width - w)/2);
-    const top = Math.max(0, (screen.height - h)/2);
-    const popup = window.open(authUrl, 'MSLogin', `width=${w},height=${h},top=${top},left=${left}`);
-    if (!popup) return showError('Popup blocked. Allow popups for this site.');
+    const w = 520, h = 620, left = Math.max(0, (screen.width - w)/2), top = Math.max(0, (screen.height - h)/2);
+    const popup = window.open(url, 'Outlook Login', `width=${w},height=${h},left=${left},top=${top}`);
+    if (!popup) return showError('Popup blocked. Allow popups to sign-in with Microsoft.');
 
-    const timer = setInterval(async ()=>{
+    const poll = setInterval(()=>{
       try {
-        if (!popup || popup.closed) { clearInterval(timer); return; }
+        if (!popup || popup.closed) { clearInterval(poll); return; }
         const hash = popup.location.hash;
         if (hash) {
           const params = new URLSearchParams(hash.substring(1));
           const token = params.get('access_token');
           if (token) {
-            clearInterval(timer);
+            clearInterval(poll);
             popup.close();
-            // fetch profile
-            try {
-              const profileRes = await fetch('https://graph.microsoft.com/v1.0/me', { headers: { Authorization: `Bearer ${token}` }});
-              if (!profileRes.ok) throw new Error('profile fetch failed');
-              const profile = await profileRes.json();
-              const user = { email: profile.mail || profile.userPrincipalName, name: profile.displayName };
-              setLocalSession(user, 'outlook');
-              location.replace('/dashboard.html');
-            } catch (ex) {
-              console.error('Outlook profile error', ex);
-              showError('Microsoft sign-in failed');
-            }
+            // fetch profile and set local session
+            fetch('https://graph.microsoft.com/v1.0/me', { headers: { Authorization: 'Bearer ' + token } })
+              .then(r => r.json())
+              .then(profile => {
+                const u = { email: profile.mail || profile.userPrincipalName, name: profile.displayName };
+                setLocalSession(u, 'outlook');
+                window.location.href = 'dashboard.html';
+              }).catch(e => {
+                console.error('outlook profile err', e);
+                showError('Microsoft sign-in failed');
+              });
           }
         }
-      } catch (err) {
-        // cross origin until popup hits same origin; ignore
-      }
+      } catch(e){}
     }, 500);
   }
 
-  // UI wiring helpers
-  function wireTabs(){
-    const tLogin = document.getElementById('tab-login');
-    const tSign  = document.getElementById('tab-signup');
-    const sLogin = document.getElementById('login-section');
-    const sReg   = document.getElementById('register-section');
-    if (!tLogin || !tSign || !sLogin || !sReg) return;
-    tLogin.addEventListener('click', ()=>{ tLogin.classList.add('active'); tSign.classList.remove('active'); sLogin.style.display=''; sReg.style.display='none'; });
-    tSign.addEventListener('click', ()=>{ tSign.classList.add('active'); tLogin.classList.remove('active'); sReg.style.display=''; sLogin.style.display='none'; });
-  }
-  function wirePasswordToggles(){
-    document.querySelectorAll('.password-toggle, .password-toggle-signup, .password-toggle-signup-confirm').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const input = btn.parentElement.querySelector('input[type="password"], input[type="text"]');
+  // UI wiring
+  function wireUI(){
+    // tabs toggle via links
+    const showSignup = el('#show-signup');
+    const showLogin = el('#show-login');
+    if (showSignup) showSignup.addEventListener('click', (e)=>{ e.preventDefault(); el('#login-section').style.display='none'; el('#signup-section').style.display='block'; });
+    if (showLogin) showLogin.addEventListener('click', (e)=>{ e.preventDefault(); el('#signup-section').style.display='none'; el('#login-section').style.display='block'; });
+
+    $all('.password-toggle, .password-toggle-signup, .password-toggle-signup-confirm').forEach(btn=>{
+      btn.addEventListener('click', (ev)=>{
+        const container = btn.closest('.password-container');
+        if (!container) return;
+        const input = container.querySelector('input[type="password"], input[type="text"]');
         if (!input) return;
-        input.type = input.type === 'password' ? 'text' : 'password';
+        input.type = (input.type === 'password') ? 'text' : 'password';
       });
     });
+
+    el('.login-btn')?.addEventListener('click', (e)=>{ e.preventDefault(); doLogin(); });
+    el('.register-btn')?.addEventListener('click', (e)=>{ e.preventDefault(); doRegister(); });
+    $all('.google-btn').forEach(b => b.addEventListener('click', (e)=>{ e.preventDefault(); doGoogle(); }));
+    $all('.outlook-btn').forEach(b => b.addEventListener('click', (e)=>{ e.preventDefault(); doOutlook(); }));
   }
 
-  function wireButtons(){
-    const loginBtn = document.querySelector('.login-btn');
-    if (loginBtn) loginBtn.addEventListener('click', handleLogin);
-    const regBtn = document.querySelector('.register-btn');
-    if (regBtn) regBtn.addEventListener('click', handleRegister);
-    document.querySelectorAll('.google-btn').forEach(b=>b.addEventListener('click', initiateGoogleAuth));
-    document.querySelectorAll('.outlook-btn').forEach(b=>b.addEventListener('click', initiateOutlookAuth));
-  }
-
-  document.addEventListener('DOMContentLoaded', ()=>{
-    wireTabs();
-    wirePasswordToggles();
-    wireButtons();
-    // refresh firebase handles for a short period in case init runs after this file
-    const deadline = Date.now() + 6000;
-    const iv = setInterval(()=>{ refreshFirebaseHandles(); if (auth || Date.now()>deadline) clearInterval(iv); }, 200);
-    console.log('signup.js: UI wired (buttons, tabs).');
+  document.addEventListener('DOMContentLoaded', () => {
+    wireUI();
+    // attempt to pick up firebase inits
+    const deadline = Date.now() + 5000;
+    const t = setInterval(()=>{
+      refreshFirebaseHandles();
+      if (auth || Date.now() > deadline) clearInterval(t);
+    }, 200);
   });
-
 })();

@@ -1,0 +1,52 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+service-account.json
+service-account-*.json
+
+# Firebase / Google credentials
+google-credentials.json
+*.json
+
+# Build outputs
+dist/
+build/
+.cache/
+.pages/
+out/
+
+# Logs
+logs/
+*.log
+
+# JetBrains
+*.iml
+
+# mac
+.AppleDouble
+.LSOverride
+
+# Local server ports etc
+*.pid
+
+# VS Code workspace storage
+.history/
+
+# Chrome extension build output if any
+extension-build/
