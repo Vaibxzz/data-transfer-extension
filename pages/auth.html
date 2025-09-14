@@ -4,13 +4,21 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Kosh - Authentication</title>
-  <link rel="stylesheet" href="auth.css" />
-  <!-- firebase config file (created at build time / or kept local) -->
-  <script src="/firebase-config.js"></script>
-  <!-- compat SDKs (CDN) -->
+  <link rel="stylesheet" href="/auth.css" />
+
+  <!-- Firebase config (fill pages/firebase-config.js with your values) -->
+  <script src="/firebase-config.js" defer></script>
+
+  <!-- compat SDKs (defer so they parse but don't block) -->
   <script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+  <!-- our init that creates window.__KOSH__ and wires onAuthStateChanged -->
+  <script src="/firebase-init-and-auth-wiring.js" defer></script>
+
+  <!-- UI script (depends on the init above; defer keeps order) -->
+  <script src="/signup.js" defer></script>
 </head>
 <body>
   <div class="page-bg"></div>
@@ -46,11 +54,11 @@
         <div class="divider"><span>OR</span></div>
 
         <button class="social-btn google-btn">
-          <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="google" />
+          <img src="/assets/icons8-google-48.png" alt="google" />
           Continue with Google
         </button>
         <button class="social-btn outlook-btn">
-          <img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/microsoftoutlook.svg" alt="outlook" />
+          <img src="/assets/icons8-outlook-48.png" alt="outlook" />
           Continue with Outlook
         </button>
       </div>
@@ -78,11 +86,11 @@
         <div class="divider"><span>OR</span></div>
 
         <button class="social-btn google-btn">
-          <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="google" />
+          <img src="/assets/icons8-google-48.png" alt="google" />
           Continue with Google
         </button>
         <button class="social-btn outlook-btn">
-          <img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/microsoftoutlook.svg" alt="outlook" />
+          <img src="/assets/icons8-outlook-48.png" alt="outlook" />
           Continue with Outlook
         </button>
       </div>
@@ -94,25 +102,5 @@
       </div>
     </div>
   </div>
-
-  <!-- expose firebase handles to other scripts once SDKs are ready -->
-  <script>
-    (function waitForFirebase() {
-      if (typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) {
-        return setTimeout(waitForFirebase, 50);
-      }
-      window.__KOSH__ = {
-        auth: firebase.auth(),
-        firestore: firebase.firestore(),
-        firebaseConfig: firebase.app().options
-      };
-    })();
-  </script>
-
-  <!-- your app signup/login script (must be served as JS) -->
-  <script src="/signup.js" defer></script>
-
-  <!-- init wiring that uses firebase compat auth -->
-  <script src="/firebase-init-and-auth-wiring.js"></script>
 </body>
 </html>

@@ -1,32 +1,18 @@
 <!doctype html>
 <html>
 <head>
-<meta charset="utf-8">
-<title>Dashboard — Kosh</title>
-<script>
-(function(){
-  try {
-    const raw = localStorage.getItem('kosh_auth');
-    let ok = false;
-    if (raw) {
-      const j = JSON.parse(raw);
-      if (j && j.expiry && Date.now() < j.expiry) ok = true;
-    }
-    if (!ok) {
-      const origin = window.location.origin || (window.location.protocol + '//' + window.location.host);
-      window.location.replace(origin + '/auth.html');
-    } else {
-      console.log('dashboard: local session valid', JSON.parse(raw).user);
-    }
-  } catch(e) {
-    window.location.replace('/auth.html');
-  }
-})();
-</script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Kosh — Dashboard</title>
+  <link rel="stylesheet" href="/auth.css" />
 </head>
 <body>
-<!-- TODO: Add the real dashboard markup here -->
-<h1>Dashboard</h1>
-<p>If you see this page you have a local session.</p>
+  <div class="page-bg"></div>
+  <main class="dashboard">
+    <h1 id="welcome-user">Welcome</h1>
+    <p id="user-email"></p>
+    <button id="logout-btn">Log out</button>
+  </main>
+  <script src="/dashboard.js" defer></script>
 </body>
 </html>
