@@ -259,9 +259,9 @@
 <script src="libs/flatpickr.min.js"></script>
 
 <!-- Firebase SDK (compat) -->
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js" defer></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js" defer></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 
 <!-- Initialize Firebase for nimble-falcon-38ada (runs after SDK because scripts above are deferred) -->
 <script>
@@ -289,7 +289,9 @@
     window.__KOSH__ = { auth: firebase.auth(), firestore: firebase.firestore(), firebaseConfig };
   })();
 </script>
-
+<script>
+    window.API_BASE_URL = "https://kosh-backend-1094058263345.us-central1.run.app";
+  </script>
 <!-- Dashboard script (deferred so it runs after Firebase init) -->
 <script src="dashboard.js" defer></script>
 </body>
