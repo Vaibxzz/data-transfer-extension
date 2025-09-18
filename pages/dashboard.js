@@ -82,7 +82,55 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('[Backend] Error saving entry:', err);
       }
     }
-  
+    // ensure firebase initialized first
+// Auth state handling with safe guards & storage fallback
+(async function initAuthListener() {
+  // Helper: try starting subscription from stored auth
+  async function trySubscribeFromStoredAuth() {
+    const res = await chromeStorageGet('kosh_auth');
+    const auth = res && res.kosh_auth ? res.kosh_auth : (localStorage.getItem('kosh_auth') ? JSON.parse(localStorage.getItem('kosh_auth')) : null);
+    if (auth && auth.user && auth.user.id) {
+      // Load profile UI from stored auth
+      loadProfile();
+      // start subscription (subscribeToData reads storage internally)
+      startSubscriptionOnce();
+      return true;
+    }
+    return false;
+  }
+
+  // If firebase is available and has auth, use its onAuthStateChanged
+  if (typeof firebase !== 'undefined' && firebase && typeof firebase.auth === 'function') {
+    try {
+      firebase.auth().onAuthStateChanged(async (user) => {
+        if (user) {
+          // Signed in -> update profile UI and subscribe
+          try { await loadProfile(); } catch(e){ /* non-fatal */ }
+          startSubscriptionOnce();
+        } else {
+          // Not signed in via Firebase -> try stored auth fallback
+          const started = await trySubscribeFromStoredAuth();
+          if (!started) {
+            console.log('No user signed in — please sign in to view data.');
+            const root = document.getElementById('dashboard-root');
+            if (root) root.innerHTML = '<p>Please sign in to see your data.</p>';
+          }
+        }
+      });
+      return;
+    } catch (e) {
+      console.warn('firebase.auth() available but onAuthStateChanged setup failed', e);
+    }
+  }
+
+  // No Firebase available — attempt to use stored kosh_auth (extension/web fallback)
+  const fallbackStarted = await trySubscribeFromStoredAuth();
+  if (!fallbackStarted) {
+    console.log('Firebase auth unavailable and no stored auth found. Please sign in.');
+    const root = document.getElementById('dashboard-root');
+    if (root) root.innerHTML = '<p>Please sign in to see your data.</p>';
+  }
+})();
     // --- AUTO-DELETION PREFERENCE LOGIC ---
     let userPreference = 30;
     const RETENTION_STORAGE_KEY = 'approvedEntriesRetentionDays';
@@ -225,6 +273,19 @@ document.addEventListener('DOMContentLoaded', () => {
     let columnFilters = {};
     let activeSearchColumn = null;
     let selectedRange = { start: null, end: null };
+
+    // Prevent subscribeToData from being started multiple times
+let subscriptionStarted = false;
+function startSubscriptionOnce() {
+  if (subscriptionStarted) {
+    console.log('[subscribe] already started — skipping duplicate start');
+    return false;
+  }
+  subscriptionStarted = true;
+  console.log('[subscribe] starting subscription (once)');
+  subscribeToData().catch(err => console.error('[subscribe] initial subscribe error', err));
+  return true;
+}
   
     // ---------- Utilities (storage fallback helpers) ----------
     function chromeStorageGet(keys) {
@@ -448,32 +509,36 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   
     // ---------- FLATPICKR ----------
-    (function setupFlatpickr() {
-      const datePickerDiv = document.getElementById('date-picker');
-      const dateRange = document.getElementById('date-range');
-      const dateInput = document.getElementById('date-input');
-      if (!datePickerDiv || !dateRange || !dateInput) return;
-      if (typeof flatpickr === 'undefined') {
-        datePickerDiv.addEventListener('click', (e) => { e.preventDefault(); alert('Calendar library not loaded. Please include flatpickr.min.js.'); });
-        return;
-      }
-      const initialText = (dateRange.textContent || '').trim();
-      let defaultDates;
-      if (initialText && initialText.includes('-')) {
-        const parts = initialText.split('-').map(s=>s.trim()); const d1 = normalizeTimestamp(parts[0]); const d2 = normalizeTimestamp(parts[1]);
-        if (d1 && d2) defaultDates = [d1, d2];
-      }
-      const fp = flatpickr(dateInput, {
-        mode: 'range', dateFormat: 'd-m-Y', defaultDate: defaultDates || undefined, clickOpens: false,
-        onChange: function(selectedDates, dateStr, instance) {
-          if (selectedDates.length === 2) dateRange.textContent = `${instance.formatDate(selectedDates[0],"d-m-Y")} - ${instance.formatDate(selectedDates[1],"d-m-Y")}`;
-          else if (selectedDates.length === 1) dateRange.textContent = instance.formatDate(selectedDates[0],"d-m-Y");
-          else dateRange.textContent = 'All dates';
-          if (typeof applyFiltersAndSort === 'function') applyFiltersAndSort();
-        }
-      });
-      datePickerDiv.addEventListener('click', function(e){ e.preventDefault(); fp.open(); });
-    })();
+    // ---------- FLATPICKR ----------
+(function setupFlatpickr() {
+  // reuse outer-scope elements (avoid redeclaring consts)
+  if (!datePickerDiv || !dateRange || !dateInput) return;
+  if (typeof flatpickr === 'undefined') {
+    datePickerDiv.addEventListener('click', (e) => { e.preventDefault(); alert('Calendar library not loaded. Please include flatpickr.min.js.'); });
+    return;
+  }
+  const initialText = (dateRange.textContent || '').trim();
+  let defaultDates;
+  if (initialText && initialText.includes('-')) {
+    const parts = initialText.split('-').map(s=>s.trim());
+    const d1 = normalizeTimestamp(parts[0]);
+    const d2 = normalizeTimestamp(parts[1]);
+    if (d1 && d2) defaultDates = [d1, d2];
+  }
+  const fp = flatpickr(dateInput, {
+    mode: 'range',
+    dateFormat: 'd-m-Y',
+    defaultDate: defaultDates || undefined,
+    clickOpens: false,
+    onChange: function(selectedDates, dateStr, instance) {
+      if (selectedDates.length === 2) dateRange.textContent = `${instance.formatDate(selectedDates[0],"d-m-Y")} - ${instance.formatDate(selectedDates[1],"d-m-Y")}`;
+      else if (selectedDates.length === 1) dateRange.textContent = instance.formatDate(selectedDates[0],"d-m-Y");
+      else dateRange.textContent = 'All dates';
+      if (typeof applyFiltersAndSort === 'function') applyFiltersAndSort();
+    }
+  });
+  datePickerDiv.addEventListener('click', function(e){ e.preventDefault(); fp.open(); });
+})();
   
     // ---------- PROFILE MENU & LOGOUT ----------
     async function loadProfile() {
@@ -586,7 +651,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial setup
     setupTableInteractions();
     loadProfile();
-    subscribeToData();
   
     if (typeof chrome !== 'undefined' && chrome.storage) {
       chrome.storage.onChanged.addListener((changes, ns) => { if (ns === 'local' && changes.kosh_auth) loadProfile(); });
