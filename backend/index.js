@@ -407,3 +407,16 @@ const port = process.env.PORT || 8080;
 app.listen(port, () => {
   console.log(`Backend listening on port ${port}`);
 });
+/* --- Compatibility aliases: accept both /entries and /saveEntry as well as /api/... --- */
+// Map /api/entries -> /entries handler
+app.get('/api/entries', (req, res, next) => app._router.handle(Object.assign(req, { url: '/entries' }), res, next));
+
+// Map /api/saveEntry -> /saveEntry handler
+app.post('/api/saveEntry', (req, res, next) => app._router.handle(Object.assign(req, { url: '/saveEntry' }), res, next));
+
+/* --- Compatibility aliases: accept both /entries and /saveEntry as well as /api/... --- */
+// Map /api/entries -> /entries handler
+app.get('/api/entries', (req, res, next) => app._router.handle(Object.assign(req, { url: '/entries' }), res, next));
+
+// Map /api/saveEntry -> /saveEntry handler
+app.post('/api/saveEntry', (req, res, next) => app._router.handle(Object.assign(req, { url: '/saveEntry' }), res, next));
