@@ -20,6 +20,11 @@ const admin = require('firebase-admin');
 const SCRAPE_API_TOKEN = process.env.SCRAPE_API_TOKEN || null;
 const app = express();
 app.use(bodyParser.json({ limit: '2mb' }));
+// --- convenience aliases so dashboard requests to /entries, /cleanup, /saveEntry work ---
+app.get('/entries', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/entries' }), res, next));
+app.post('/cleanup', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/cleanup' }), res, next));
+app.post('/saveEntry', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/saveEntry' }), res, next));
+app.post('/scrapes', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/scrapes' }), res, next));
 
 // -------------------- CORS --------------------
 const WHITELIST = new Set([
