@@ -20,10 +20,20 @@ const admin = require('firebase-admin');
 const SCRAPE_API_TOKEN = process.env.SCRAPE_API_TOKEN || null;
 const app = express();
 app.use(bodyParser.json({ limit: '2mb' }));
-// --- convenience aliases so dashboard requests to /entries, /cleanup, /saveEntry work ---
+
+
+// --- ensure both /entries and /api/entries (etc.) work for legacy & new clients ---
+// convenience aliases so both /entries and /api/entries (and cleanup/saveEntry) work
 app.get('/entries', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/entries' }), res, next));
+
+
 app.post('/cleanup', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/cleanup' }), res, next));
+
+
 app.post('/saveEntry', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/saveEntry' }), res, next));
+
+
+// optional: keep scrapes mapping too if you expect /scrapes <-> /api/scrapes
 app.post('/scrapes', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/scrapes' }), res, next));
 
 // -------------------- CORS --------------------
@@ -181,7 +191,7 @@ app.post('/login', safe(async (req, res) => {
 }));
 
 // -------------------- Save entry (protected) --------------------
-app.post('/api/saveEntry'), safe(verifyIdTokenFromHeader, async (req, res) => {
+app.post('/saveEntry', safe(verifyIdTokenFromHeader, async (req, res) => {
   const { entry, userId } = req.body || {};
   const caller = req.__auth;
   if (!entry) return res.status(400).json({ success: false, message: 'Missing entry' });
@@ -208,7 +218,7 @@ app.post('/api/saveEntry'), safe(verifyIdTokenFromHeader, async (req, res) => {
 }));
 
 // -------------------- Get entries (protected) --------------------
-app.get('/api/entries'), safe(verifyIdTokenFromHeader, async (req, res) => {
+app.get('/entries', safe(verifyIdTokenFromHeader, async (req, res) => {
   try {
     if (!db) return res.json({ success: true, entries: [] });
 
@@ -235,7 +245,7 @@ app.get('/api/entries'), safe(verifyIdTokenFromHeader, async (req, res) => {
 }));
 
 // -------------------- Cleanup old data (protected) --------------------
-app.post('/api/cleanup'), safe(verifyIdTokenFromHeader, async (req, res) => {
+app.post('/cleanup', safe(verifyIdTokenFromHeader, async (req, res) => {
   try {
     if (!db) return res.json({ success: true, deletedCount: 0 });
 
