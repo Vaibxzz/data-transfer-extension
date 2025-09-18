@@ -181,7 +181,7 @@ app.post('/login', safe(async (req, res) => {
 }));
 
 // -------------------- Save entry (protected) --------------------
-app.post('/saveEntry', safe(verifyIdTokenFromHeader, async (req, res) => {
+app.post('/api/saveEntry'), safe(verifyIdTokenFromHeader, async (req, res) => {
   const { entry, userId } = req.body || {};
   const caller = req.__auth;
   if (!entry) return res.status(400).json({ success: false, message: 'Missing entry' });
@@ -208,7 +208,7 @@ app.post('/saveEntry', safe(verifyIdTokenFromHeader, async (req, res) => {
 }));
 
 // -------------------- Get entries (protected) --------------------
-app.get('/entries', safe(verifyIdTokenFromHeader, async (req, res) => {
+app.get('/api/entries'), safe(verifyIdTokenFromHeader, async (req, res) => {
   try {
     if (!db) return res.json({ success: true, entries: [] });
 
@@ -235,7 +235,7 @@ app.get('/entries', safe(verifyIdTokenFromHeader, async (req, res) => {
 }));
 
 // -------------------- Cleanup old data (protected) --------------------
-app.post('/cleanup', safe(verifyIdTokenFromHeader, async (req, res) => {
+app.post('/api/cleanup'), safe(verifyIdTokenFromHeader, async (req, res) => {
   try {
     if (!db) return res.json({ success: true, deletedCount: 0 });
 
