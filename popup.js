@@ -1,3 +1,56 @@
+// Robust popup init wrapper: catches errors and shows Options link if anything fails
+(async function robustPopupInit() {
+    try {
+      // your existing popup init code goes here (copy/paste the body of your current init)
+      // e.g. await initUi(); or the content that reads storage and renders transferUi
+  
+      // EXAMPLE fallback UI logic (safe and minimal):
+      const transferUi = document.getElementById('transfer-ui') || document.body;
+      // Try to load config
+      let data = {};
+      if (chrome && chrome.storage && chrome.storage.sync) {
+        data = await new Promise(resolve => chrome.storage.sync.get(['sourceUrl'], r => resolve(r || {})));
+      } else {
+        data.sourceUrl = localStorage.getItem('sourceUrl') || '';
+      }
+  
+      if (!data.sourceUrl) {
+        transferUi.innerHTML = `
+          <h3>Configuration Needed</h3>
+          <p>Source URL is not set. Please configure it in the
+          <a id="open-options" href="#">options page</a>.</p>
+        `;
+        document.getElementById('open-options').addEventListener('click', (e) => {
+          e.preventDefault();
+          // open options robustly
+          if (chrome && chrome.runtime && chrome.runtime.openOptionsPage) {
+            chrome.runtime.openOptionsPage();
+          } else {
+            window.open(chrome.runtime.getURL('options.html'), '_blank');
+          }
+        });
+        return;
+      }
+  
+      // rest of normal popup logic goes here...
+    } catch (err) {
+      // show user-friendly message and log full error for debugging
+      console.error('popup init error', err);
+      const transferUi = document.getElementById('transfer-ui') || document.body;
+      transferUi.innerHTML = `
+        <h3>KOSH</h3>
+        <p style="color:#dc2626">An error occurred.</p>
+        <p><a id="open-options2" href="#">Open options to configure</a></p>
+        <pre style="white-space:pre-wrap">${String(err).slice(0,200)}</pre>
+      `;
+      document.getElementById('open-options2').addEventListener('click', (e) => {
+        e.preventDefault();
+        if (chrome && chrome.runtime && chrome.runtime.openOptionsPage) chrome.runtime.openOptionsPage();
+        else window.open(chrome.runtime.getURL('options.html'), '_blank');
+      });
+    }
+  })();
+
 let scrapedData = [];
 let currentItemIndex = 0;
 

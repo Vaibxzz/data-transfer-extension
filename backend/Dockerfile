@@ -1,18 +1,13 @@
-# Use an official Node.js runtime as the base image
-FROM node:18-alpine
+# Dockerfile - simple Node production image
+FROM node:20-alpine
 
-# Set working directory
 WORKDIR /app
-
-# Copy package files and install dependencies
 COPY package*.json ./
-RUN npm install --only=production
+RUN npm ci --production
 
-# Copy the rest of the backend code
 COPY . .
 
-# Expose the port your app runs on
+ENV PORT=8080
 EXPOSE 8080
 
-# Run the server
 CMD ["node", "index.js"]

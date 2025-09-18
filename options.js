@@ -128,9 +128,11 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadSavedSettings() {
   try {
     // pass keys as array to storageGet
-    const data = await storageGet(['sourceUrl', 'destinationUrl']);
+    const data = await storageGet(['sourceUrl', 'destinationUrl', 'authToken']);
     if (sourceUrlInput) sourceUrlInput.value = data.sourceUrl || '';
     if (destinationUrlInput) destinationUrlInput.value = data.destinationUrl || '';
+    const authTokenInput = document.getElementById('authToken');
+    if (authTokenInput) authTokenInput.value = data.authToken || '';
     console.log('[options] loaded settings', data);
   } catch (err) {
     console.error('Error loading settings', err);
@@ -139,21 +141,23 @@ async function loadSavedSettings() {
 
 // Save settings: use storageSet helper (works for extension or local)
 if (optionsForm) {
-  optionsForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const sourceUrl = sourceUrlInput ? sourceUrlInput.value.trim() : '';
-    const destinationUrl = destinationUrlInput ? destinationUrlInput.value.trim() : '';
-
-    try {
-      await storageSet({ sourceUrl, destinationUrl });
-      showStatus('Settings saved successfully!', 'success');
-      console.log('[options] saved', { sourceUrl, destinationUrl });
-    } catch (err) {
-      console.error('Error saving settings', err);
-      showStatus('Failed to save settings', 'error');
-    }
-  });
-}
+    optionsForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const sourceUrl = sourceUrlInput ? sourceUrlInput.value.trim() : '';
+      const destinationUrl = destinationUrlInput ? destinationUrlInput.value.trim() : '';
+      const authTokenInput = document.getElementById('authToken');
+      const authToken = authTokenInput ? authTokenInput.value.trim() : '';
+  
+      try {
+        await storageSet({ sourceUrl, destinationUrl, authToken });
+        showStatus('Settings saved successfully!', 'success');
+        console.log('[options] saved', { sourceUrl, destinationUrl, authToken: authToken ? '***' : '(empty)' });
+      } catch (err) {
+        console.error('Error saving settings', err);
+        showStatus('Failed to save settings', 'error');
+      }
+    });
+  }
 
 // Dashboard button: use chrome.tabs.create if available, otherwise fallback to normal navigation
 if (dashboardBtn) {

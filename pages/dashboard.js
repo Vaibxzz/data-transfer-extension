@@ -1,7 +1,27 @@
 // dashboard.js (cleaned single-copy version)
 // Backend-first dashboard: reads entries via backend /entries, saves via /saveEntry, cleanup via /cleanup.
 // Keeps firebase init for auth token acquisition only (no direct Firestore reads).
-
+function waitForFirebaseReady(timeoutMs = 5000) {
+    return new Promise((resolve, reject) => {
+      const start = Date.now();
+      (function check() {
+        if (window.firebase && firebase.apps && firebase.apps.length > 0) return resolve();
+        if (Date.now() - start > timeoutMs) return reject(new Error('Firebase not ready'));
+        setTimeout(check, 50);
+      })();
+    });
+  }
+  
+  (async () => {
+    try {
+      await waitForFirebaseReady();
+      // rest of dashboard init...
+    } catch (e) {
+      console.error('Firebase SDK not loaded yet — dashboard will wait.', e);
+      // show friendly UI
+      document.getElementById('dashboard-root').innerText = 'Waiting for Firebase…';
+    }
+  })();
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Dashboard DOM loaded');
   
