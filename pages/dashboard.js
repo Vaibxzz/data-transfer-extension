@@ -1,12 +1,15 @@
-// dashboard.js - with default entries for quick local testing
+// dashboard.js
+// Full, integrated dashboard script — includes default entries, search toggles, stat filters, flatpickr, backend polling, CSV export, logout.
+// Replace existing dashboard.js with this file.
+
 (function () {
   'use strict';
 
-  // --- Config ---
+  // ---------------- CONFIG ----------------
   window.API_BASE_URL = window.API_BASE_URL || "https://kosh-backend-1094058263345.us-central1.run.app";
   const POLL_MS = 30 * 1000;
 
-  // --- Default entries for testing (will be overwritten by backend when available) ---
+  // ---------------- DEFAULT ENTRIES (for quick local testing; overridden by backend) ----------------
   const DEFAULT_ENTRIES = [
     { contact: "Alice Johnson", country: "USA", timestamp: "2025-09-15T10:30:00Z", status: "processed", approved: true },
     { contact: "Bob Smith", country: "UK", timestamp: "2025-09-16T12:00:00Z", status: "processed", approved: true },
@@ -15,11 +18,12 @@
     { contact: "Elena Petrova", country: "Russia", timestamp: "2025-09-05T08:00:00Z", status: "processed" }
   ];
 
-  // --- Utilities ---
+  // ---------------- UTILITIES ----------------
   function safeQuery(selector) { try { return document.querySelector(selector); } catch(e){ return null; } }
   function safeQueryAll(selector) { try { return Array.from(document.querySelectorAll(selector)); } catch(e){ return []; } }
   function escapeHtml(str) { return String(str || '').replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"); }
 
+  // chrome storage fallback helpers (works on hosted and extension)
   function chromeStorageGet(keys) {
     return new Promise((resolve) => {
       if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
@@ -52,7 +56,7 @@
     });
   }
 
-  // timestamp helpers
+  // timestamp helpers (handles seconds/ms/strings like dd-mm-yyyy)
   function normalizeTimestamp(value) {
     if (value === undefined || value === null || value === '') return null;
     if (typeof value === 'number' && !isNaN(value)) {
@@ -87,7 +91,7 @@
     } catch(e) { return d.toString(); }
   }
 
-  // --- DOM elements ---
+  // ---------------- DOM ELEMENTS (guarded) ----------------
   const tableBody = safeQuery('#entries-table-body');
   const totalEntriesCard = safeQuery('#total-entries');
   const processedEntriesCard = safeQuery('#processed-entries');
@@ -105,16 +109,18 @@
   const profileAvatarEl = safeQuery('#profile-avatar');
   const btnLogout = safeQuery('#btn-logout');
 
-  // --- State ---
+  // ---------------- STATE ----------------
   let currentEntries = [];
   let mappedEntries = [];
   let filteredEntries = [];
   let sortConfig = { column: null, direction: 'asc' };
   let columnFilters = {};
+  let activeSearchColumn = null;
   let selectedRange = { start: null, end: null };
+  let statusFilter = null; // null | 'processed' | 'rejected'
   let pollHandle = null;
 
-  // map raw entries
+  // ---------------- MAPPING ----------------
   function mapEntries(raw = []) {
     return (raw || []).map(e => {
       const contact = e.contact || `${e.firstName || ''} ${e.lastName || ''}`.trim() || e.name || '';
@@ -128,7 +134,7 @@
     });
   }
 
-  // sort indicator update (neutral ↕, asc ↑, desc ↓)
+  // ---------------- SORT INDICATOR ----------------
   function updateSortIndicators() {
     safeQueryAll('.sort-indicator').forEach(ind => { ind.textContent = '↕'; });
     if (sortConfig.column) {
@@ -137,9 +143,16 @@
     }
   }
 
-  // apply filters & sort
+  // ---------------- FILTER / SORT / RENDER ----------------
   function applyFiltersAndSort() {
     let all = Array.isArray(mappedEntries) ? [...mappedEntries] : [];
+
+    // status filter from stat cards
+    if (statusFilter === 'processed') {
+      all = all.filter(it => (it.status || '').toLowerCase() === 'processed' || (it._orig && (it._orig.approved || it._orig._approved)));
+    } else if (statusFilter === 'rejected') {
+      all = all.filter(it => (it.status || '').toLowerCase() === 'rejected' || (it._orig && (it._orig.rejected || it._orig._rejected)));
+    }
 
     // column filters
     all = all.filter(item => {
@@ -198,6 +211,7 @@
     updateStats();
   }
 
+  // ---------------- STATS ----------------
   function updateStats() {
     const arr = Array.isArray(mappedEntries) ? mappedEntries : [];
     const total = arr.length;
@@ -208,7 +222,7 @@
     if (rejectedEntriesCard) rejectedEntriesCard.textContent = String(rejected);
   }
 
-  // CSV
+  // ---------------- CSV ----------------
   function downloadData() {
     const headers = ['First Name','Last Name','Country','Process Time'];
     let csv = headers.join(',') + '\n';
@@ -224,18 +238,49 @@
     window.URL.revokeObjectURL(url);
   }
 
-  // table interactions
+  // ---------------- SEARCH CONTAINERS (toggle/focus) ----------------
+  function closeAllSearchContainers() {
+    document.querySelectorAll('.column-search-container.active').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('th.search-active').forEach(h => h.classList.remove('search-active'));
+    activeSearchColumn = null;
+  }
+  function toggleSearchContainer(header) {
+    const searchContainer = header.querySelector('.column-search-container');
+    const column = header.getAttribute('data-column');
+    if (!searchContainer) return;
+    if (activeSearchColumn === column) {
+      searchContainer.classList.remove('active');
+      header.classList.remove('search-active');
+      activeSearchColumn = null;
+      return;
+    }
+    closeAllSearchContainers();
+    searchContainer.classList.add('active');
+    header.classList.add('search-active');
+    activeSearchColumn = column;
+    const input = searchContainer.querySelector('.column-search');
+    setTimeout(() => input && input.focus(), 50);
+  }
+
+  // ---------------- TABLE INTERACTIONS ----------------
   function setupTableInteractions() {
     safeQueryAll('th[data-column]').forEach(th => {
       const col = th.getAttribute('data-column');
       if (!col) return;
       th.addEventListener('click', (ev) => {
         if (ev.target && ev.target.closest && ev.target.closest('.column-search-container')) return;
+        const isSortClick = !!ev.target.closest('.sort-indicator');
+        if (!isSortClick) {
+          toggleSearchContainer(th);
+          if (activeSearchColumn === col) return; // if we opened search, stop (user likely intends to search)
+        }
+        // sort behavior
         if (sortConfig.column === col) sortConfig.direction = sortConfig.direction === 'asc' ? 'desc' : 'asc';
         else { sortConfig.column = col; sortConfig.direction = 'asc'; }
         updateSortIndicators();
         applyFiltersAndSort();
       });
+
       const input = th.querySelector('.column-search');
       if (input) {
         input.addEventListener('click', e => e.stopPropagation());
@@ -247,9 +292,33 @@
         });
       }
     });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('th')) closeAllSearchContainers();
+    });
   }
 
-  // flatpickr defensive init
+  // ---------------- STAT CARD FILTERS ----------------
+  function setupStatCardFilters() {
+    const totalEl = safeQuery('#stat-total');
+    const processedEl = safeQuery('#stat-processed');
+    const rejectedEl = safeQuery('#stat-rejected');
+
+    function setActiveCard(key) {
+      [totalEl, processedEl, rejectedEl].forEach(el => el && el.classList.remove('active'));
+      if (key === 'total' && totalEl) totalEl.classList.add('active');
+      if (key === 'processed' && processedEl) processedEl.classList.add('active');
+      if (key === 'rejected' && rejectedEl) rejectedEl.classList.add('active');
+    }
+
+    if (totalEl) totalEl.addEventListener('click', () => { statusFilter = null; setActiveCard('total'); applyFiltersAndSort(); });
+    if (processedEl) processedEl.addEventListener('click', () => { statusFilter = 'processed'; setActiveCard('processed'); applyFiltersAndSort(); });
+    if (rejectedEl) rejectedEl.addEventListener('click', () => { statusFilter = 'rejected'; setActiveCard('rejected'); applyFiltersAndSort(); });
+
+    setActiveCard('total');
+  }
+
+  // ---------------- FLATPICKR (defensive) ----------------
   (function setupFlatpickrDefensive() {
     if (!datePickerDiv || !dateRange || !dateInput) return;
     function init() {
@@ -282,6 +351,7 @@
         datePickerDiv.addEventListener('click', (e)=> { e.preventDefault(); fp.open(); });
       } catch (err) { console.error('flatpickr init failed', err); }
     }
+
     if (typeof flatpickr !== 'undefined') { init(); return; }
     const scriptExists = Array.from(document.scripts).some(s => (s.src||'').includes('flatpickr.min.js'));
     if (scriptExists) { setTimeout(init, 200); return; }
@@ -293,7 +363,7 @@
     document.head.appendChild(s);
   })();
 
-  // dropdown
+  // ---------------- DROPDOWN ----------------
   function setupDropdown() {
     if (!dropdownToggle || !dropdownMenu) return;
     dropdownToggle.addEventListener('click', (e) => { e.stopPropagation(); dropdownMenu.classList.toggle('show'); });
@@ -314,7 +384,7 @@
     sel.textContent = selected.length === 0 ? 'Select categories' : (selected.length === 1 ? selected[0] : `${selected.length} selected`);
   }
 
-  // profile + logout
+  // ---------------- PROFILE + LOGOUT ----------------
   async function loadProfile() {
     try {
       const res = await chromeStorageGet('kosh_auth');
@@ -334,11 +404,13 @@
       }
     } catch (err) { console.warn('loadProfile failed', err); }
   }
+
   if (userAvatarEl && profileMenuEl) {
     userAvatarEl.addEventListener('click', (e) => { e.stopPropagation(); profileMenuEl.classList.toggle('show'); profileMenuEl.setAttribute('aria-hidden', profileMenuEl.classList.contains('show') ? 'false' : 'true'); });
     document.addEventListener('click', () => { profileMenuEl.classList.remove('show'); profileMenuEl.setAttribute('aria-hidden','true'); });
     profileMenuEl.addEventListener('click', e => e.stopPropagation());
   }
+
   if (btnLogout) {
     btnLogout.addEventListener('click', async (e) => {
       e.preventDefault();
@@ -364,7 +436,7 @@
     });
   }
 
-  // backend auth token helper
+  // ---------------- BACKEND AUTH HELPERS ----------------
   async function getAuthToken() {
     try {
       const user = (window.__KOSH__ && window.__KOSH__.auth && window.__KOSH__.auth.currentUser) || (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser);
@@ -376,29 +448,36 @@
     } catch (err) { console.warn('getAuthToken failed', err); return null; }
   }
 
-  // fetch entries once
+  // ---------------- FETCH / SAVE / CLEANUP ----------------
   async function fetchEntriesOnce() {
     try {
       const token = await getAuthToken();
       const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
       const resp = await fetch((window.API_BASE_URL || '') + '/entries', { method: 'GET', headers });
-      if (!resp.ok) { console.warn('/entries returned', resp.status); mappedEntries = mappedEntries.length ? mappedEntries : mapEntries(DEFAULT_ENTRIES); applyFiltersAndSort(); return; }
+      if (!resp.ok) {
+        console.warn('/entries returned', resp.status);
+        if (!mappedEntries || mappedEntries.length === 0) mappedEntries = mapEntries(DEFAULT_ENTRIES);
+        applyFiltersAndSort();
+        return;
+      }
       const payload = await resp.json().catch(()=>null);
       if (payload && payload.success && Array.isArray(payload.entries)) {
         currentEntries = payload.entries;
         mappedEntries = mapEntries(currentEntries);
         applyFiltersAndSort();
       } else {
-        // if backend returned nothing, keep defaults
         if (!mappedEntries || mappedEntries.length === 0) mappedEntries = mapEntries(DEFAULT_ENTRIES);
         applyFiltersAndSort();
       }
-    } catch (err) { console.error('fetchEntriesOnce error', err); if (!mappedEntries || mappedEntries.length === 0) mappedEntries = mapEntries(DEFAULT_ENTRIES); applyFiltersAndSort(); }
+    } catch (err) {
+      console.error('fetchEntriesOnce error', err);
+      if (!mappedEntries || mappedEntries.length === 0) mappedEntries = mapEntries(DEFAULT_ENTRIES);
+      applyFiltersAndSort();
+    }
   }
 
   function startPollingEntries() {
     if (pollHandle) return;
-    // first, show defaults immediately if no backend applied yet
     if (!mappedEntries || mappedEntries.length === 0) {
       mappedEntries = mapEntries(DEFAULT_ENTRIES);
       applyFiltersAndSort();
@@ -437,7 +516,7 @@
     } catch (err) { console.error('saveEntryToBackend error', err); return false; }
   }
 
-  // expose helper for manual testing
+  // ---------------- TEST HELPERS (expose) ----------------
   window.__KOSH__ = window.__KOSH__ || {};
   window.__KOSH__.setEntries = function(rawEntries) {
     currentEntries = Array.isArray(rawEntries) ? rawEntries : [];
@@ -445,14 +524,15 @@
     applyFiltersAndSort();
   };
 
-  // init
+  // ---------------- INIT ----------------
   function init() {
     try {
       setupTableInteractions();
       setupDropdown();
+      setupStatCardFilters();
       updateSortIndicators();
       loadProfile();
-      // immediately populate with DEFAULT_ENTRIES for quick check
+      // load defaults immediately so user can see data while backend responds
       if (!mappedEntries || mappedEntries.length === 0) {
         mappedEntries = mapEntries(DEFAULT_ENTRIES);
         applyFiltersAndSort();
@@ -465,4 +545,4 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
-})();
+})(); 
