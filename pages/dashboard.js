@@ -1,12 +1,4 @@
-// dashboard.js - synced & fully fixed for your provided dashboard.html
-// Features:
-// - Defensive Flatpickr init
-// - Firebase auth token handling (compat)
-// - Backend /entries polling, /saveEntry, /cleanup
-// - Sort indicators (neutral: ↕, asc: ↑, desc: ↓)
-// - Column search, date-range filter, CSV export
-// - Robust logout (extension + hosted) and defensive guards
-
+// dashboard.js - with default entries for quick local testing
 (function () {
   'use strict';
 
@@ -14,12 +6,20 @@
   window.API_BASE_URL = window.API_BASE_URL || "https://kosh-backend-1094058263345.us-central1.run.app";
   const POLL_MS = 30 * 1000;
 
+  // --- Default entries for testing (will be overwritten by backend when available) ---
+  const DEFAULT_ENTRIES = [
+    { contact: "Alice Johnson", country: "USA", timestamp: "2025-09-15T10:30:00Z", status: "processed", approved: true },
+    { contact: "Bob Smith", country: "UK", timestamp: "2025-09-16T12:00:00Z", status: "processed", approved: true },
+    { contact: "Carlos Mendes", country: "Portugal", timestamp: "2025-09-10T09:15:00Z", status: "rejected", rejected: true },
+    { contact: "Deepa Rao", country: "India", timestamp: "2025-09-18T18:45:00Z", status: "processed", approved: true },
+    { contact: "Elena Petrova", country: "Russia", timestamp: "2025-09-05T08:00:00Z", status: "processed" }
+  ];
+
   // --- Utilities ---
   function safeQuery(selector) { try { return document.querySelector(selector); } catch(e){ return null; } }
   function safeQueryAll(selector) { try { return Array.from(document.querySelectorAll(selector)); } catch(e){ return []; } }
   function escapeHtml(str) { return String(str || '').replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"); }
 
-  // chrome storage fallback helpers
   function chromeStorageGet(keys) {
     return new Promise((resolve) => {
       if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
@@ -42,7 +42,7 @@
   }
   function chromeStorageRemove(keys) {
     return new Promise((resolve) => {
-      if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         chrome.storage.local.remove(keys, resolve);
       } else {
         if (Array.isArray(keys)) keys.forEach(k => localStorage.removeItem(k));
@@ -52,7 +52,7 @@
     });
   }
 
-  // timestamp normalization (handles seconds & ms & common formats)
+  // timestamp helpers
   function normalizeTimestamp(value) {
     if (value === undefined || value === null || value === '') return null;
     if (typeof value === 'number' && !isNaN(value)) {
@@ -87,7 +87,7 @@
     } catch(e) { return d.toString(); }
   }
 
-  // --- DOM Elements (guarded) ---
+  // --- DOM elements ---
   const tableBody = safeQuery('#entries-table-body');
   const totalEntriesCard = safeQuery('#total-entries');
   const processedEntriesCard = safeQuery('#processed-entries');
@@ -105,17 +105,16 @@
   const profileAvatarEl = safeQuery('#profile-avatar');
   const btnLogout = safeQuery('#btn-logout');
 
-  // --- App State ---
+  // --- State ---
   let currentEntries = [];
   let mappedEntries = [];
   let filteredEntries = [];
   let sortConfig = { column: null, direction: 'asc' };
   let columnFilters = {};
-  let activeSearchColumn = null;
   let selectedRange = { start: null, end: null };
   let pollHandle = null;
 
-  // --- Map & normalize backend entries into table rows ---
+  // map raw entries
   function mapEntries(raw = []) {
     return (raw || []).map(e => {
       const contact = e.contact || `${e.firstName || ''} ${e.lastName || ''}`.trim() || e.name || '';
@@ -129,7 +128,7 @@
     });
   }
 
-  // --- Sort indicator logic: neutral ↕, asc ↑, desc ↓ ---
+  // sort indicator update (neutral ↕, asc ↑, desc ↓)
   function updateSortIndicators() {
     safeQueryAll('.sort-indicator').forEach(ind => { ind.textContent = '↕'; });
     if (sortConfig.column) {
@@ -138,7 +137,7 @@
     }
   }
 
-  // --- Apply filters / sort / render ---
+  // apply filters & sort
   function applyFiltersAndSort() {
     let all = Array.isArray(mappedEntries) ? [...mappedEntries] : [];
 
@@ -199,7 +198,6 @@
     updateStats();
   }
 
-  // --- Stats ---
   function updateStats() {
     const arr = Array.isArray(mappedEntries) ? mappedEntries : [];
     const total = arr.length;
@@ -210,7 +208,7 @@
     if (rejectedEntriesCard) rejectedEntriesCard.textContent = String(rejected);
   }
 
-  // --- CSV Export ---
+  // CSV
   function downloadData() {
     const headers = ['First Name','Last Name','Country','Process Time'];
     let csv = headers.join(',') + '\n';
@@ -226,7 +224,7 @@
     window.URL.revokeObjectURL(url);
   }
 
-  // --- Table header interactions (sort + optional column search) ---
+  // table interactions
   function setupTableInteractions() {
     safeQueryAll('th[data-column]').forEach(th => {
       const col = th.getAttribute('data-column');
@@ -238,7 +236,6 @@
         updateSortIndicators();
         applyFiltersAndSort();
       });
-
       const input = th.querySelector('.column-search');
       if (input) {
         input.addEventListener('click', e => e.stopPropagation());
@@ -252,7 +249,7 @@
     });
   }
 
-  // --- Defensive Flatpickr setup ---
+  // flatpickr defensive init
   (function setupFlatpickrDefensive() {
     if (!datePickerDiv || !dateRange || !dateInput) return;
     function init() {
@@ -265,7 +262,6 @@
           if (d1 && d2) defaultDates = [d1, d2];
         }
         if (typeof flatpickr === 'undefined') {
-          // fail gracefully
           datePickerDiv.addEventListener('click', (e) => { e.preventDefault(); alert('Calendar library not loaded.'); });
           return;
         }
@@ -278,26 +274,17 @@
             if (selectedDates.length === 2) dateRange.textContent = `${instance.formatDate(selectedDates[0],"d-m-Y")} - ${instance.formatDate(selectedDates[1],"d-m-Y")}`;
             else if (selectedDates.length === 1) dateRange.textContent = instance.formatDate(selectedDates[0],"d-m-Y");
             else dateRange.textContent = 'All dates';
-            // update internal selectedRange (ISO)
-            if (selectedDates.length === 2) {
-              selectedRange.start = selectedDates[0].toISOString();
-              selectedRange.end = selectedDates[1].toISOString();
-            } else selectedRange = { start: null, end: null };
+            if (selectedDates.length === 2) { selectedRange.start = selectedDates[0].toISOString(); selectedRange.end = selectedDates[1].toISOString(); }
+            else selectedRange = { start: null, end: null };
             applyFiltersAndSort();
           }
         });
         datePickerDiv.addEventListener('click', (e)=> { e.preventDefault(); fp.open(); });
       } catch (err) { console.error('flatpickr init failed', err); }
     }
-
     if (typeof flatpickr !== 'undefined') { init(); return; }
-    // try to load CDN if not present
     const scriptExists = Array.from(document.scripts).some(s => (s.src||'').includes('flatpickr.min.js'));
-    if (scriptExists) {
-      // hope it's loading; retry a bit later
-      setTimeout(init, 200);
-      return;
-    }
+    if (scriptExists) { setTimeout(init, 200); return; }
     const s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.js';
     s.async = true;
@@ -306,7 +293,7 @@
     document.head.appendChild(s);
   })();
 
-  // --- Dropdown category UI wiring ---
+  // dropdown
   function setupDropdown() {
     if (!dropdownToggle || !dropdownMenu) return;
     dropdownToggle.addEventListener('click', (e) => { e.stopPropagation(); dropdownMenu.classList.toggle('show'); });
@@ -327,10 +314,7 @@
     sel.textContent = selected.length === 0 ? 'Select categories' : (selected.length === 1 ? selected[0] : `${selected.length} selected`);
   }
 
-  // --- CSV export wiring ---
-  if (downloadBtn) downloadBtn.addEventListener('click', (e) => { e.preventDefault(); try { downloadData(); } catch(err){ console.error(err); } });
-
-  // --- Profile UI and logout (robust for extension + hosted) ---
+  // profile + logout
   async function loadProfile() {
     try {
       const res = await chromeStorageGet('kosh_auth');
@@ -355,18 +339,15 @@
     document.addEventListener('click', () => { profileMenuEl.classList.remove('show'); profileMenuEl.setAttribute('aria-hidden','true'); });
     profileMenuEl.addEventListener('click', e => e.stopPropagation());
   }
-
   if (btnLogout) {
     btnLogout.addEventListener('click', async (e) => {
       e.preventDefault();
       try {
         await chromeStorageRemove('kosh_auth');
         try { localStorage.removeItem('kosh_auth'); } catch(e){}
-        // Firebase sign-out if present
         if (typeof firebase !== 'undefined' && firebase && firebase.auth) {
           try { await firebase.auth().signOut(); } catch(e){ console.warn('firebase signOut failed', e); }
         }
-        // extension fallback
         if (typeof chrome !== 'undefined' && chrome.runtime) {
           try {
             if (typeof chrome.runtime.openOptionsPage === 'function') { chrome.runtime.openOptionsPage(); return; }
@@ -377,14 +358,13 @@
             }
           } catch (err) { console.warn('chrome logout fallback failed', err); }
         }
-        // web fallback
         try { window.location.href = '/auth.html'; } catch(e) { console.warn('navigate to auth failed', e); }
         try { window.close(); } catch(e){}
       } catch (err) { console.error('logout error', err); }
     });
   }
 
-  // --- Backend communication (entries polling + cleanup + saveEntry) ---
+  // backend auth token helper
   async function getAuthToken() {
     try {
       const user = (window.__KOSH__ && window.__KOSH__.auth && window.__KOSH__.auth.currentUser) || (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser);
@@ -396,29 +376,35 @@
     } catch (err) { console.warn('getAuthToken failed', err); return null; }
   }
 
+  // fetch entries once
   async function fetchEntriesOnce() {
     try {
       const token = await getAuthToken();
       const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
       const resp = await fetch((window.API_BASE_URL || '') + '/entries', { method: 'GET', headers });
-      if (!resp.ok) { console.warn('/entries returned', resp.status); mappedEntries = []; applyFiltersAndSort(); return; }
+      if (!resp.ok) { console.warn('/entries returned', resp.status); mappedEntries = mappedEntries.length ? mappedEntries : mapEntries(DEFAULT_ENTRIES); applyFiltersAndSort(); return; }
       const payload = await resp.json().catch(()=>null);
       if (payload && payload.success && Array.isArray(payload.entries)) {
         currentEntries = payload.entries;
         mappedEntries = mapEntries(currentEntries);
         applyFiltersAndSort();
       } else {
-        mappedEntries = [];
+        // if backend returned nothing, keep defaults
+        if (!mappedEntries || mappedEntries.length === 0) mappedEntries = mapEntries(DEFAULT_ENTRIES);
         applyFiltersAndSort();
       }
-    } catch (err) { console.error('fetchEntriesOnce error', err); mappedEntries = []; applyFiltersAndSort(); }
+    } catch (err) { console.error('fetchEntriesOnce error', err); if (!mappedEntries || mappedEntries.length === 0) mappedEntries = mapEntries(DEFAULT_ENTRIES); applyFiltersAndSort(); }
   }
 
   function startPollingEntries() {
     if (pollHandle) return;
+    // first, show defaults immediately if no backend applied yet
+    if (!mappedEntries || mappedEntries.length === 0) {
+      mappedEntries = mapEntries(DEFAULT_ENTRIES);
+      applyFiltersAndSort();
+    }
     fetchEntriesOnce();
     pollHandle = setInterval(fetchEntriesOnce, POLL_MS);
-    // schedule daily cleanup
     setTimeout(cleanupOldData, 2000);
     setInterval(cleanupOldData, 24*60*60*1000);
   }
@@ -451,7 +437,7 @@
     } catch (err) { console.error('saveEntryToBackend error', err); return false; }
   }
 
-  // --- Public helper to set entries (useful for manual testing) ---
+  // expose helper for manual testing
   window.__KOSH__ = window.__KOSH__ || {};
   window.__KOSH__.setEntries = function(rawEntries) {
     currentEntries = Array.isArray(rawEntries) ? rawEntries : [];
@@ -459,21 +445,24 @@
     applyFiltersAndSort();
   };
 
-  // --- Init wiring & startup ---
+  // init
   function init() {
     try {
       setupTableInteractions();
       setupDropdown();
       updateSortIndicators();
       loadProfile();
+      // immediately populate with DEFAULT_ENTRIES for quick check
+      if (!mappedEntries || mappedEntries.length === 0) {
+        mappedEntries = mapEntries(DEFAULT_ENTRIES);
+        applyFiltersAndSort();
+      }
       startPollingEntries();
-      // attach search helpers already wired in setupTableInteractions
+      if (downloadBtn) downloadBtn.addEventListener('click', (e)=>{ e.preventDefault(); downloadData(); });
     } catch (err) { console.error('init error', err); }
   }
 
-  // run on DOMContentLoaded or immediately if already ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else { init(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 
 })();
