@@ -129,15 +129,13 @@ document.addEventListener('DOMContentLoaded', () => {
   function closeAllSearchContainers(){ document.querySelectorAll('.column-search-container.active').forEach(c=>c.classList.remove('active')); document.querySelectorAll('th.search-active').forEach(h=>h.classList.remove('search-active')); activeSearchColumn = null; }
   function handleSort(column){ if (sortConfig.column === column) sortConfig.direction = sortConfig.direction === 'asc' ? 'desc' : 'asc'; else { sortConfig.column = column; sortConfig.direction = 'asc'; } updateSortIndicators(); applyFiltersAndSort(); }
 
-  // updated to use emoji indicators
-  function updateSortIndicators(){
-    // default all to ↕️
-    document.querySelectorAll('.sort-indicator').forEach(ind => { ind.textContent = '↕️'; });
-    if (sortConfig.column) {
-      const el = document.querySelector(`.sort-indicator[data-col="${sortConfig.column}"]`);
-      if (el) el.textContent = sortConfig.direction === 'asc' ? '⬆️' : '⬇️';
-    }
+  function updateSortIndicators() {
+  document.querySelectorAll('.sort-indicator').forEach(ind => ind.textContent = '⇅');
+  if (sortConfig.column) {
+    const el = document.querySelector(`th[data-column="${sortConfig.column}"] .sort-indicator`);
+    if (el) el.textContent = sortConfig.direction === 'asc' ? '▲' : '▼';
   }
+}
 
   function handleColumnSearch(column, searchTerm){ if (!searchTerm || searchTerm.trim()==='') delete columnFilters[column]; else columnFilters[column] = searchTerm.toLowerCase(); applyFiltersAndSort(); }
 
