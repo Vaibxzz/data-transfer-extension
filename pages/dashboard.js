@@ -1,76 +1,25 @@
-// dashboard.js (checked + small fixes)
-// Keeps your structure and minimal behavior; uses neutral '↕' + '↑' / '↓' for sort indicators.
+// dashboard.js - synced & fully fixed for your provided dashboard.html
+// Features:
+// - Defensive Flatpickr init
+// - Firebase auth token handling (compat)
+// - Backend /entries polling, /saveEntry, /cleanup
+// - Sort indicators (neutral: ↕, asc: ↑, desc: ↓)
+// - Column search, date-range filter, CSV export
+// - Robust logout (extension + hosted) and defensive guards
 
-function waitForFirebaseReady(timeoutMs = 5000) {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    (function check() {
-      if (window.firebase && firebase.apps && firebase.apps.length > 0) return resolve();
-      if (Date.now() - start > timeoutMs) return reject(new Error('Firebase not ready'));
-      setTimeout(check, 50);
-    })();
-  });
-}
+(function () {
+  'use strict';
 
-(async () => {
-  try {
-    await waitForFirebaseReady();
-  } catch (e) {
-    console.error("Firebase SDK not loaded yet — dashboard will wait.", e);
-    const root = document.getElementById("dashboard-root");
-    if (root) root.innerText = "Waiting for Firebase…";
-  }
-})();
+  // --- Config ---
+  window.API_BASE_URL = window.API_BASE_URL || "https://kosh-backend-1094058263345.us-central1.run.app";
+  const POLL_MS = 30 * 1000;
 
-document.addEventListener("DOMContentLoaded", () => {
-  console.log("Dashboard DOM loaded");
+  // --- Utilities ---
+  function safeQuery(selector) { try { return document.querySelector(selector); } catch(e){ return null; } }
+  function safeQueryAll(selector) { try { return Array.from(document.querySelectorAll(selector)); } catch(e){ return []; } }
+  function escapeHtml(str) { return String(str || '').replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"); }
 
-  // --- Firebase init (auth only) ---
-  const firebaseConfig = {
-    apiKey: "AIzaSyAddUryOENzoRqCCaIO_5GPduBsYGI512k",
-    authDomain: "nimble-falcon-38ada.firebaseapp.com",
-    projectId: "nimble-falcon-38ada",
-    storageBucket: "nimble-falcon-38ada.firebasestorage.app",
-    messagingSenderId: "1094058263345",
-    appId: "1:1094058263345:web:6ce5920eb3bca28b576610",
-  };
-  if (typeof firebase !== "undefined" && !firebase.apps.length) {
-    try {
-      firebase.initializeApp(firebaseConfig);
-    } catch (e) {
-      console.warn("Firebase init warning:", e);
-    }
-  }
-
-  // --- State ---
-  let currentEntries = [];
-  let mappedEntries = [];
-  let filteredEntries = [];
-  let sortConfig = { column: null, direction: "asc" };
-  let columnFilters = {};
-  let activeSearchColumn = null;
-  let selectedRange = { start: null, end: null };
-  let subscriptionStarted = false;
-
-  // --- Elements (guarded) ---
-  const tableBody = document.getElementById("entries-table-body");
-  const totalEntriesCard = document.getElementById("total-entries");
-  const processedEntriesCard = document.getElementById("processed-entries");
-  const rejectedEntriesCard = document.getElementById("rejected-entries");
-  const downloadBtn = document.getElementById("download-btn");
-  const dropdownToggle = document.getElementById("dropdown-toggle");
-  const dropdownMenu = document.getElementById("dropdown-menu");
-  const datePickerDiv = document.getElementById("date-picker");
-  const dateRange = document.getElementById("date-range");
-  const dateInput = document.getElementById("date-input");
-  const userAvatarEl = document.getElementById("user-avatar");
-  const profileMenuEl = document.getElementById("profile-menu");
-  const profileNameEl = document.getElementById("profile-name");
-  const profileEmailEl = document.getElementById("profile-email");
-  const profileAvatarEl = document.getElementById("profile-avatar");
-  const btnLogout = document.getElementById("btn-logout");
-
-  // --- Helpers ---
+  // chrome storage fallback helpers
   function chromeStorageGet(keys) {
     return new Promise((resolve) => {
       if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
@@ -78,20 +27,10 @@ document.addEventListener("DOMContentLoaded", () => {
       } else {
         const out = {};
         if (Array.isArray(keys)) {
-          keys.forEach((k) => {
-            try {
-              out[k] = JSON.parse(localStorage.getItem(k));
-            } catch (e) {
-              out[k] = localStorage.getItem(k);
-            }
-          });
-        } else if (typeof keys === "string") {
-          try {
-            out[keys] = JSON.parse(localStorage.getItem(keys));
-          } catch (e) {
-            out[keys] = localStorage.getItem(keys);
-          }
-        } else if (typeof keys === "object" && keys !== null) {
+          keys.forEach(k => { try { out[k] = JSON.parse(localStorage.getItem(k)); } catch(e){ out[k] = localStorage.getItem(k); } });
+        } else if (typeof keys === 'string') {
+          try { out[keys] = JSON.parse(localStorage.getItem(keys)); } catch(e){ out[keys] = localStorage.getItem(keys); }
+        } else if (typeof keys === 'object' && keys !== null) {
           Object.keys(keys).forEach(k => {
             try { out[k] = JSON.parse(localStorage.getItem(k)); } catch(e){ out[k] = localStorage.getItem(k); }
             if (out[k] === null || out[k] === undefined) out[k] = keys[k];
@@ -101,28 +40,36 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
+  function chromeStorageRemove(keys) {
+    return new Promise((resolve) => {
+      if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.remove(keys, resolve);
+      } else {
+        if (Array.isArray(keys)) keys.forEach(k => localStorage.removeItem(k));
+        else localStorage.removeItem(keys);
+        resolve();
+      }
+    });
+  }
 
+  // timestamp normalization (handles seconds & ms & common formats)
   function normalizeTimestamp(value) {
     if (value === undefined || value === null || value === '') return null;
-    // numbers: detect seconds (10-digit) vs ms (13-digit)
     if (typeof value === 'number' && !isNaN(value)) {
-      // if value looks like seconds (<= 1e11) convert to ms
       if (value < 1e11) return new Date(value * 1000);
       return new Date(value);
     }
     if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (/^\d+$/.test(trimmed)) {
-        // numeric string — treat 10-digit as seconds
-        if (trimmed.length === 10) return new Date(parseInt(trimmed, 10) * 1000);
-        return new Date(parseInt(trimmed, 10));
+      const t = value.trim();
+      if (/^\d+$/.test(t)) {
+        if (t.length === 10) return new Date(parseInt(t,10)*1000);
+        return new Date(parseInt(t,10));
       }
-      const d = new Date(trimmed);
+      const d = new Date(t);
       if (!isNaN(d.getTime())) return d;
-      // fallback pattern dd-mm-yyyy or dd/mm/yyyy
-      const match = trimmed.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+      const match = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
       if (match) {
-        const day = parseInt(match[1], 10), month = parseInt(match[2], 10) - 1, year = parseInt(match[3], 10);
+        const day = parseInt(match[1],10), month = parseInt(match[2],10)-1, year = parseInt(match[3],10);
         const y = year < 100 ? year + 2000 : year;
         const dd = new Date(y, month, day);
         return isNaN(dd.getTime()) ? null : dd;
@@ -130,74 +77,75 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     return null;
   }
-
   function formatDateLocal(d) {
-    if (!d) return "Invalid Date";
+    if (!d) return 'Invalid Date';
     try {
-      return d.toLocaleString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      }).replace(/,/g, "");
-    } catch (e) { return d.toString(); }
+      return d.toLocaleString('en-GB', {
+        day:'2-digit', month:'short', year:'numeric',
+        hour:'2-digit', minute:'2-digit', second:'2-digit'
+      }).replace(/,/g,'');
+    } catch(e) { return d.toString(); }
   }
 
-  function mapEntries(rawEntries) {
-    return (rawEntries || []).map((e) => {
-      const contact = e.contact || e.name || `${e.firstName || ''} ${e.lastName || ''}`.trim() || '';
-      const parts = contact.split(" ").filter(Boolean);
+  // --- DOM Elements (guarded) ---
+  const tableBody = safeQuery('#entries-table-body');
+  const totalEntriesCard = safeQuery('#total-entries');
+  const processedEntriesCard = safeQuery('#processed-entries');
+  const rejectedEntriesCard = safeQuery('#rejected-entries');
+  const downloadBtn = safeQuery('#download-btn');
+  const dropdownToggle = safeQuery('#dropdown-toggle');
+  const dropdownMenu = safeQuery('#dropdown-menu');
+  const datePickerDiv = safeQuery('#date-picker');
+  const dateRange = safeQuery('#date-range');
+  const dateInput = safeQuery('#date-input');
+  const userAvatarEl = safeQuery('#user-avatar');
+  const profileMenuEl = safeQuery('#profile-menu');
+  const profileNameEl = safeQuery('#profile-name');
+  const profileEmailEl = safeQuery('#profile-email');
+  const profileAvatarEl = safeQuery('#profile-avatar');
+  const btnLogout = safeQuery('#btn-logout');
+
+  // --- App State ---
+  let currentEntries = [];
+  let mappedEntries = [];
+  let filteredEntries = [];
+  let sortConfig = { column: null, direction: 'asc' };
+  let columnFilters = {};
+  let activeSearchColumn = null;
+  let selectedRange = { start: null, end: null };
+  let pollHandle = null;
+
+  // --- Map & normalize backend entries into table rows ---
+  function mapEntries(raw = []) {
+    return (raw || []).map(e => {
+      const contact = e.contact || `${e.firstName || ''} ${e.lastName || ''}`.trim() || e.name || '';
+      const parts = contact.split(' ').filter(Boolean);
       const firstName = parts[0] || (e.firstName || '');
-      const lastName = parts.slice(1).join(" ") || (e.lastName || '');
+      const lastName = parts.slice(1).join(' ') || (e.lastName || '');
       const rawTimestamp = normalizeTimestamp(e.timestamp ?? e.processTime ?? e.time ?? null);
-      const processTime = rawTimestamp ? formatDateLocal(rawTimestamp) : "Invalid Date";
-      // determine status if present
+      const processTime = rawTimestamp ? formatDateLocal(rawTimestamp) : 'Invalid Date';
       const status = (e.status || e._status || (e.approved ? 'processed' : (e.rejected ? 'rejected' : 'processed')) || '').toString().toLowerCase();
-      return {
-        firstName,
-        lastName,
-        country: e.country || e.location || "Unknown",
-        processTime,
-        rawTimestamp,
-        status,
-        _orig: e,
-      };
+      return { firstName, lastName, country: e.country || e.location || 'Unknown', processTime, rawTimestamp, status, _orig: e };
     });
   }
 
-  // --- Sort indicators (neutral: ↕ ; asc: ↑ ; desc: ↓ ) ---
+  // --- Sort indicator logic: neutral ↕, asc ↑, desc ↓ ---
   function updateSortIndicators() {
-    document.querySelectorAll(".sort-indicator").forEach((ind) => {
-      if (ind) ind.textContent = "↕";
-    });
+    safeQueryAll('.sort-indicator').forEach(ind => { ind.textContent = '↕'; });
     if (sortConfig.column) {
-      const el = document.querySelector(`th[data-column="${sortConfig.column}"] .sort-indicator`);
-      if (el) el.textContent = sortConfig.direction === "asc" ? "↑" : "↓";
+      const el = safeQuery(`th[data-column="${sortConfig.column}"] .sort-indicator`);
+      if (el) el.textContent = sortConfig.direction === 'asc' ? '↑' : '↓';
     }
   }
 
-  // --- Table filters & sort ---
-  function handleSort(column) {
-    if (sortConfig.column === column) {
-      sortConfig.direction = sortConfig.direction === "asc" ? "desc" : "asc";
-    } else {
-      sortConfig.column = column;
-      sortConfig.direction = "asc";
-    }
-    updateSortIndicators();
-    applyFiltersAndSort();
-  }
-
+  // --- Apply filters / sort / render ---
   function applyFiltersAndSort() {
-    // fall back to empty array
     let all = Array.isArray(mappedEntries) ? [...mappedEntries] : [];
 
     // column filters
-    all = all.filter((item) => {
-      for (const [column, term] of Object.entries(columnFilters)) {
-        const val = String(item[column] ?? '').toLowerCase();
+    all = all.filter(item => {
+      for (const [col, term] of Object.entries(columnFilters)) {
+        const val = String(item[col] ?? '').toLowerCase();
         if (!val.includes(term)) return false;
       }
       return true;
@@ -207,21 +155,21 @@ document.addEventListener("DOMContentLoaded", () => {
     if (selectedRange.start && selectedRange.end) {
       const start = new Date(selectedRange.start); start.setHours(0,0,0,0);
       const end = new Date(selectedRange.end); end.setHours(23,59,59,999);
-      all = all.filter(item => item.rawTimestamp && item.rawTimestamp.getTime() >= start.getTime() && item.rawTimestamp.getTime() <= end.getTime());
+      all = all.filter(it => it.rawTimestamp && it.rawTimestamp.getTime() >= start.getTime() && it.rawTimestamp.getTime() <= end.getTime());
     }
 
     // sort
     if (sortConfig.column) {
       const col = sortConfig.column;
-      all.sort((a, b) => {
-        if (col === "processTime") {
-          const aTime = a.rawTimestamp ? a.rawTimestamp.getTime() : -Infinity;
-          const bTime = b.rawTimestamp ? b.rawTimestamp.getTime() : -Infinity;
-          return sortConfig.direction === "asc" ? aTime - bTime : bTime - aTime;
+      all.sort((a,b) => {
+        if (col === 'processTime') {
+          const aT = a.rawTimestamp ? a.rawTimestamp.getTime() : -Infinity;
+          const bT = b.rawTimestamp ? b.rawTimestamp.getTime() : -Infinity;
+          return sortConfig.direction === 'asc' ? aT - bT : bT - aT;
         }
-        const aVal = String(a[col] ?? '').toLowerCase();
-        const bVal = String(b[col] ?? '').toLowerCase();
-        return sortConfig.direction === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+        const aV = String(a[col] ?? '').toLowerCase();
+        const bV = String(b[col] ?? '').toLowerCase();
+        return sortConfig.direction === 'asc' ? aV.localeCompare(bV) : bV.localeCompare(aV);
       });
     }
 
@@ -231,101 +179,279 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderFilteredData() {
     if (!tableBody) return;
-    tableBody.innerHTML = "";
+    tableBody.innerHTML = '';
     if (!filteredEntries || filteredEntries.length === 0) {
-      const row = document.createElement("tr");
+      const row = document.createElement('tr');
       row.innerHTML = '<td colspan="4" style="text-align:center; color:#9ca3af;">No matching entries</td>';
       tableBody.appendChild(row);
       return;
     }
-    filteredEntries.forEach((item) => {
-      const row = document.createElement("tr");
+    filteredEntries.forEach(item => {
+      const row = document.createElement('tr');
       row.innerHTML = `
-        <td>${escapeHtml(item.firstName || '')}</td>
-        <td>${escapeHtml(item.lastName || '')}</td>
-        <td>${escapeHtml(item.country || '')}</td>
-        <td>${escapeHtml(item.processTime || 'Invalid Date')}</td>
+        <td>${escapeHtml(item.firstName)}</td>
+        <td>${escapeHtml(item.lastName)}</td>
+        <td>${escapeHtml(item.country)}</td>
+        <td>${escapeHtml(item.processTime)}</td>
       `;
       tableBody.appendChild(row);
     });
     updateStats();
   }
 
-  function escapeHtml(str) {
-    return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
-  }
-
+  // --- Stats ---
   function updateStats() {
-    // derive stats from mappedEntries where possible
     const arr = Array.isArray(mappedEntries) ? mappedEntries : [];
     const total = arr.length;
     const processed = arr.filter(e => (e.status || '').toLowerCase() === 'processed' || (e._orig && (e._orig.approved || e._orig._approved))).length;
     const rejected = arr.filter(e => (e.status || '').toLowerCase() === 'rejected' || (e._orig && (e._orig.rejected || e._orig._rejected))).length;
-
     if (totalEntriesCard) totalEntriesCard.textContent = String(total);
     if (processedEntriesCard) processedEntriesCard.textContent = String(processed);
     if (rejectedEntriesCard) rejectedEntriesCard.textContent = String(rejected);
-
-    // visually set active stat (if you want)
-    document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
-    if (!sortConfig.column && totalEntriesCard) totalEntriesCard.parentElement && totalEntriesCard.parentElement.classList && totalEntriesCard.classList && document.getElementById('stat-total') && document.getElementById('stat-total').classList.add('active');
   }
 
   // --- CSV Export ---
   function downloadData() {
-    const headers = ["First Name", "Last Name", "Country", "Process Time"];
-    let csv = headers.join(",") + "\n";
-    (filteredEntries || []).forEach((entry) => {
-      csv += `"${(entry.firstName||'').replace(/"/g,'""')}","${(entry.lastName||'').replace(/"/g,'""')}","${(entry.country||'').replace(/"/g,'""')}","${(entry.processTime||'').replace(/"/g,'""')}"\n`;
+    const headers = ['First Name','Last Name','Country','Process Time'];
+    let csv = headers.join(',') + '\n';
+    (filteredEntries || []).forEach(row => {
+      csv += `"${(row.firstName||'').replace(/"/g,'""')}","${(row.lastName||'').replace(/"/g,'""')}","${(row.country||'').replace(/"/g,'""')}","${(row.processTime||'').replace(/"/g,'""')}"\n`;
     });
-    const blob = new Blob([csv], { type: "text/csv" });
+    const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `data-${new Date().toISOString().split("T")[0]}.csv`;
-    link.click();
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `reconciliation-data-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
     window.URL.revokeObjectURL(url);
   }
-  if (downloadBtn) downloadBtn.addEventListener("click", downloadData);
 
-  // --- Setup table header interactions (click to sort; does not break if search containers present) ---
+  // --- Table header interactions (sort + optional column search) ---
   function setupTableInteractions() {
-    const headers = document.querySelectorAll("th[data-column]");
-    headers.forEach((header) => {
-      header.addEventListener("click", (e) => {
-        // if click inside column search input, ignore
-        if (e.target && e.target.closest && e.target.closest('.column-search-container')) return;
-        const col = header.getAttribute('data-column');
-        if (col) handleSort(col);
+    safeQueryAll('th[data-column]').forEach(th => {
+      const col = th.getAttribute('data-column');
+      if (!col) return;
+      th.addEventListener('click', (ev) => {
+        if (ev.target && ev.target.closest && ev.target.closest('.column-search-container')) return;
+        if (sortConfig.column === col) sortConfig.direction = sortConfig.direction === 'asc' ? 'desc' : 'asc';
+        else { sortConfig.column = col; sortConfig.direction = 'asc'; }
+        updateSortIndicators();
+        applyFiltersAndSort();
       });
 
-      // wire up column search input if present
-      const searchInput = header.querySelector('.column-search');
-      if (searchInput) {
-        searchInput.addEventListener('input', (ev) => {
-          const c = header.getAttribute('data-column');
-          if (!c) return;
-          const v = (ev.target.value || '').trim();
-          if (!v) delete columnFilters[c];
-          else columnFilters[c] = v.toLowerCase();
+      const input = th.querySelector('.column-search');
+      if (input) {
+        input.addEventListener('click', e => e.stopPropagation());
+        input.addEventListener('input', (e) => {
+          const v = (e.target.value || '').trim();
+          if (!v) delete columnFilters[col];
+          else columnFilters[col] = v.toLowerCase();
           applyFiltersAndSort();
         });
-        // prevent header click when clicking input
-        searchInput.addEventListener('click', ev => ev.stopPropagation());
-      }
-    });
-    document.addEventListener('click', (e) => {
-      // close any open column-search containers if clicked outside
-      if (!e.target.closest('th')) {
-        document.querySelectorAll('.column-search-container.active').forEach(c=>c.classList.remove('active'));
-        document.querySelectorAll('th.search-active').forEach(h=>h.classList.remove('search-active'));
-        activeSearchColumn = null;
       }
     });
   }
 
-  // --- Minimal public function to set entries (call this after fetching from backend) ---
-  // Accepts raw entries array (from backend) and refreshes table
+  // --- Defensive Flatpickr setup ---
+  (function setupFlatpickrDefensive() {
+    if (!datePickerDiv || !dateRange || !dateInput) return;
+    function init() {
+      try {
+        const initialText = (dateRange.textContent || '').trim();
+        let defaultDates;
+        if (initialText && initialText.includes('-')) {
+          const parts = initialText.split('-').map(s=>s.trim());
+          const d1 = normalizeTimestamp(parts[0]), d2 = normalizeTimestamp(parts[1]);
+          if (d1 && d2) defaultDates = [d1, d2];
+        }
+        if (typeof flatpickr === 'undefined') {
+          // fail gracefully
+          datePickerDiv.addEventListener('click', (e) => { e.preventDefault(); alert('Calendar library not loaded.'); });
+          return;
+        }
+        const fp = flatpickr(dateInput, {
+          mode:'range',
+          dateFormat:'d-m-Y',
+          defaultDate: defaultDates || undefined,
+          clickOpens: false,
+          onChange: function(selectedDates, dateStr, instance) {
+            if (selectedDates.length === 2) dateRange.textContent = `${instance.formatDate(selectedDates[0],"d-m-Y")} - ${instance.formatDate(selectedDates[1],"d-m-Y")}`;
+            else if (selectedDates.length === 1) dateRange.textContent = instance.formatDate(selectedDates[0],"d-m-Y");
+            else dateRange.textContent = 'All dates';
+            // update internal selectedRange (ISO)
+            if (selectedDates.length === 2) {
+              selectedRange.start = selectedDates[0].toISOString();
+              selectedRange.end = selectedDates[1].toISOString();
+            } else selectedRange = { start: null, end: null };
+            applyFiltersAndSort();
+          }
+        });
+        datePickerDiv.addEventListener('click', (e)=> { e.preventDefault(); fp.open(); });
+      } catch (err) { console.error('flatpickr init failed', err); }
+    }
+
+    if (typeof flatpickr !== 'undefined') { init(); return; }
+    // try to load CDN if not present
+    const scriptExists = Array.from(document.scripts).some(s => (s.src||'').includes('flatpickr.min.js'));
+    if (scriptExists) {
+      // hope it's loading; retry a bit later
+      setTimeout(init, 200);
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.js';
+    s.async = true;
+    s.onload = init;
+    s.onerror = () => { console.error('Failed to load flatpickr from CDN'); init(); };
+    document.head.appendChild(s);
+  })();
+
+  // --- Dropdown category UI wiring ---
+  function setupDropdown() {
+    if (!dropdownToggle || !dropdownMenu) return;
+    dropdownToggle.addEventListener('click', (e) => { e.stopPropagation(); dropdownMenu.classList.toggle('show'); });
+    document.addEventListener('click', () => dropdownMenu.classList.remove('show'));
+    dropdownMenu.addEventListener('click', (e) => e.stopPropagation());
+    dropdownMenu.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.addEventListener('change', updateSelectedCategories));
+    updateSelectedCategories();
+  }
+  function updateSelectedCategories() {
+    if (!dropdownMenu) return;
+    const selected = [];
+    dropdownMenu.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+      const lbl = cb.nextElementSibling ? cb.nextElementSibling.textContent : cb.id;
+      if (lbl) selected.push(lbl.trim());
+    });
+    const sel = safeQuery('#selected-category');
+    if (!sel) return;
+    sel.textContent = selected.length === 0 ? 'Select categories' : (selected.length === 1 ? selected[0] : `${selected.length} selected`);
+  }
+
+  // --- CSV export wiring ---
+  if (downloadBtn) downloadBtn.addEventListener('click', (e) => { e.preventDefault(); try { downloadData(); } catch(err){ console.error(err); } });
+
+  // --- Profile UI and logout (robust for extension + hosted) ---
+  async function loadProfile() {
+    try {
+      const res = await chromeStorageGet('kosh_auth');
+      const auth = res && res.kosh_auth ? res.kosh_auth : (localStorage.getItem('kosh_auth') ? JSON.parse(localStorage.getItem('kosh_auth')) : null);
+      if (auth && auth.user) {
+        const user = auth.user;
+        if (profileNameEl) profileNameEl.textContent = user.name || user.email || 'User';
+        if (profileEmailEl) profileEmailEl.textContent = user.email || '';
+        const initial = (user.name || user.email || 'S')[0].toUpperCase();
+        if (profileAvatarEl) profileAvatarEl.textContent = initial;
+        if (userAvatarEl) userAvatarEl.textContent = initial;
+      } else {
+        if (profileNameEl) profileNameEl.textContent = 'Guest';
+        if (profileEmailEl) profileEmailEl.textContent = 'Not signed in';
+        if (profileAvatarEl) profileAvatarEl.textContent = 'S';
+        if (userAvatarEl) userAvatarEl.textContent = 'S';
+      }
+    } catch (err) { console.warn('loadProfile failed', err); }
+  }
+  if (userAvatarEl && profileMenuEl) {
+    userAvatarEl.addEventListener('click', (e) => { e.stopPropagation(); profileMenuEl.classList.toggle('show'); profileMenuEl.setAttribute('aria-hidden', profileMenuEl.classList.contains('show') ? 'false' : 'true'); });
+    document.addEventListener('click', () => { profileMenuEl.classList.remove('show'); profileMenuEl.setAttribute('aria-hidden','true'); });
+    profileMenuEl.addEventListener('click', e => e.stopPropagation());
+  }
+
+  if (btnLogout) {
+    btnLogout.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        await chromeStorageRemove('kosh_auth');
+        try { localStorage.removeItem('kosh_auth'); } catch(e){}
+        // Firebase sign-out if present
+        if (typeof firebase !== 'undefined' && firebase && firebase.auth) {
+          try { await firebase.auth().signOut(); } catch(e){ console.warn('firebase signOut failed', e); }
+        }
+        // extension fallback
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+          try {
+            if (typeof chrome.runtime.openOptionsPage === 'function') { chrome.runtime.openOptionsPage(); return; }
+            if (chrome.runtime.getURL) {
+              const url = chrome.runtime.getURL('auth.html');
+              if (chrome.tabs && chrome.tabs.create) { chrome.tabs.create({ url, active: true }); return; }
+              window.location.href = url; return;
+            }
+          } catch (err) { console.warn('chrome logout fallback failed', err); }
+        }
+        // web fallback
+        try { window.location.href = '/auth.html'; } catch(e) { console.warn('navigate to auth failed', e); }
+        try { window.close(); } catch(e){}
+      } catch (err) { console.error('logout error', err); }
+    });
+  }
+
+  // --- Backend communication (entries polling + cleanup + saveEntry) ---
+  async function getAuthToken() {
+    try {
+      const user = (window.__KOSH__ && window.__KOSH__.auth && window.__KOSH__.auth.currentUser) || (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser);
+      if (user && typeof user.getIdToken === 'function') return await user.getIdToken();
+      const res = await chromeStorageGet('kosh_auth');
+      const auth = res && res.kosh_auth ? res.kosh_auth : (localStorage.getItem('kosh_auth') ? JSON.parse(localStorage.getItem('kosh_auth')) : null);
+      if (auth && auth.token) return auth.token;
+      return null;
+    } catch (err) { console.warn('getAuthToken failed', err); return null; }
+  }
+
+  async function fetchEntriesOnce() {
+    try {
+      const token = await getAuthToken();
+      const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+      const resp = await fetch((window.API_BASE_URL || '') + '/entries', { method: 'GET', headers });
+      if (!resp.ok) { console.warn('/entries returned', resp.status); mappedEntries = []; applyFiltersAndSort(); return; }
+      const payload = await resp.json().catch(()=>null);
+      if (payload && payload.success && Array.isArray(payload.entries)) {
+        currentEntries = payload.entries;
+        mappedEntries = mapEntries(currentEntries);
+        applyFiltersAndSort();
+      } else {
+        mappedEntries = [];
+        applyFiltersAndSort();
+      }
+    } catch (err) { console.error('fetchEntriesOnce error', err); mappedEntries = []; applyFiltersAndSort(); }
+  }
+
+  function startPollingEntries() {
+    if (pollHandle) return;
+    fetchEntriesOnce();
+    pollHandle = setInterval(fetchEntriesOnce, POLL_MS);
+    // schedule daily cleanup
+    setTimeout(cleanupOldData, 2000);
+    setInterval(cleanupOldData, 24*60*60*1000);
+  }
+
+  async function cleanupOldData() {
+    try {
+      const token = await getAuthToken();
+      const headers = Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {});
+      const resp = await fetch((window.API_BASE_URL || '') + '/cleanup', {
+        method:'POST',
+        headers,
+        body: JSON.stringify({ retentionDays: 30 })
+      });
+      if (!resp.ok) { console.warn('cleanup returned', resp.status); return; }
+      const data = await resp.json().catch(()=>null);
+      if (!data || !data.success) console.warn('cleanup response', data);
+    } catch (err) { console.error('cleanupOldData error', err); }
+  }
+
+  async function saveEntryToBackend(entry) {
+    try {
+      const token = await getAuthToken();
+      const headers = Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {});
+      const resp = await fetch((window.API_BASE_URL || '') + '/saveEntry', {
+        method: 'POST', headers, body: JSON.stringify({ entry })
+      });
+      if (!resp.ok) { console.warn('/saveEntry returned', resp.status); return false; }
+      const data = await resp.json().catch(()=>null);
+      return data && data.success;
+    } catch (err) { console.error('saveEntryToBackend error', err); return false; }
+  }
+
+  // --- Public helper to set entries (useful for manual testing) ---
   window.__KOSH__ = window.__KOSH__ || {};
   window.__KOSH__.setEntries = function(rawEntries) {
     currentEntries = Array.isArray(rawEntries) ? rawEntries : [];
@@ -333,9 +459,21 @@ document.addEventListener("DOMContentLoaded", () => {
     applyFiltersAndSort();
   };
 
-  // Initial setup
-  setupTableInteractions();
-  updateSortIndicators();
-  applyFiltersAndSort();
+  // --- Init wiring & startup ---
+  function init() {
+    try {
+      setupTableInteractions();
+      setupDropdown();
+      updateSortIndicators();
+      loadProfile();
+      startPollingEntries();
+      // attach search helpers already wired in setupTableInteractions
+    } catch (err) { console.error('init error', err); }
+  }
 
-}); // DOMContentLoaded end
+  // run on DOMContentLoaded or immediately if already ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else { init(); }
+
+})();
