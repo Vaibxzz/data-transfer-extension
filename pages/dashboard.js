@@ -1,6 +1,3 @@
-// dashboard.js
-// Full, integrated dashboard script — includes default entries, search toggles, stat filters, flatpickr, backend polling, CSV export, logout.
-// Replace existing dashboard.js with this file.
 
 (function () {
   'use strict';
@@ -9,7 +6,7 @@
   window.API_BASE_URL = window.API_BASE_URL || "https://kosh-backend-1094058263345.us-central1.run.app";
   const POLL_MS = 30 * 1000;
 
-  // ---------------- DEFAULT ENTRIES (for quick local testing; overridden by backend) ----------------
+  // ---------------- DEFAULT ENTRIES ----------------
   const DEFAULT_ENTRIES = [
     { contact: "Alice Johnson", country: "USA", timestamp: "2025-09-15T10:30:00Z", status: "processed", approved: true },
     { contact: "Bob Smith", country: "UK", timestamp: "2025-09-16T12:00:00Z", status: "processed", approved: true },
@@ -23,7 +20,6 @@
   function safeQueryAll(selector) { try { return Array.from(document.querySelectorAll(selector)); } catch(e){ return []; } }
   function escapeHtml(str) { return String(str || '').replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"); }
 
-  // chrome storage fallback helpers (works on hosted and extension)
   function chromeStorageGet(keys) {
     return new Promise((resolve) => {
       if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
@@ -56,7 +52,7 @@
     });
   }
 
-  // timestamp helpers (handles seconds/ms/strings like dd-mm-yyyy)
+  // timestamp helpers
   function normalizeTimestamp(value) {
     if (value === undefined || value === null || value === '') return null;
     if (typeof value === 'number' && !isNaN(value)) {
@@ -91,7 +87,7 @@
     } catch(e) { return d.toString(); }
   }
 
-  // ---------------- DOM ELEMENTS (guarded) ----------------
+  // ---------------- DOM ----------------
   const tableBody = safeQuery('#entries-table-body');
   const totalEntriesCard = safeQuery('#total-entries');
   const processedEntriesCard = safeQuery('#processed-entries');
@@ -117,7 +113,7 @@
   let columnFilters = {};
   let activeSearchColumn = null;
   let selectedRange = { start: null, end: null };
-  let statusFilter = null; // null | 'processed' | 'rejected'
+  let statusFilter = null;
   let pollHandle = null;
 
   // ---------------- MAPPING ----------------
@@ -136,7 +132,7 @@
 
   // ---------------- SORT INDICATOR ----------------
   function updateSortIndicators() {
-    safeQueryAll('.sort-indicator').forEach(ind => { ind.textContent = '↕'; });
+    safeQueryAll('.sort-indicator').forEach(ind => { ind.textContent = '⇅'; });
     if (sortConfig.column) {
       const el = safeQuery(`th[data-column="${sortConfig.column}"] .sort-indicator`);
       if (el) el.textContent = sortConfig.direction === 'asc' ? '↑' : '↓';
@@ -147,14 +143,12 @@
   function applyFiltersAndSort() {
     let all = Array.isArray(mappedEntries) ? [...mappedEntries] : [];
 
-    // status filter from stat cards
     if (statusFilter === 'processed') {
       all = all.filter(it => (it.status || '').toLowerCase() === 'processed' || (it._orig && (it._orig.approved || it._orig._approved)));
     } else if (statusFilter === 'rejected') {
       all = all.filter(it => (it.status || '').toLowerCase() === 'rejected' || (it._orig && (it._orig.rejected || it._orig._rejected)));
     }
 
-    // column filters
     all = all.filter(item => {
       for (const [col, term] of Object.entries(columnFilters)) {
         const val = String(item[col] ?? '').toLowerCase();
@@ -163,14 +157,12 @@
       return true;
     });
 
-    // date range
     if (selectedRange.start && selectedRange.end) {
       const start = new Date(selectedRange.start); start.setHours(0,0,0,0);
       const end = new Date(selectedRange.end); end.setHours(23,59,59,999);
       all = all.filter(it => it.rawTimestamp && it.rawTimestamp.getTime() >= start.getTime() && it.rawTimestamp.getTime() <= end.getTime());
     }
 
-    // sort
     if (sortConfig.column) {
       const col = sortConfig.column;
       all.sort((a,b) => {
@@ -238,7 +230,7 @@
     window.URL.revokeObjectURL(url);
   }
 
-  // ---------------- SEARCH CONTAINERS (toggle/focus) ----------------
+  // ---------------- SEARCH CONTAINERS ----------------
   function closeAllSearchContainers() {
     document.querySelectorAll('.column-search-container.active').forEach(c => c.classList.remove('active'));
     document.querySelectorAll('th.search-active').forEach(h => h.classList.remove('search-active'));
@@ -272,9 +264,8 @@
         const isSortClick = !!ev.target.closest('.sort-indicator');
         if (!isSortClick) {
           toggleSearchContainer(th);
-          if (activeSearchColumn === col) return; // if we opened search, stop (user likely intends to search)
+          if (activeSearchColumn === col) return;
         }
-        // sort behavior
         if (sortConfig.column === col) sortConfig.direction = sortConfig.direction === 'asc' ? 'desc' : 'asc';
         else { sortConfig.column = col; sortConfig.direction = 'asc'; }
         updateSortIndicators();
@@ -318,7 +309,7 @@
     setActiveCard('total');
   }
 
-  // ---------------- FLATPICKR (defensive) ----------------
+  // ---------------- FLATPICKR ----------------
   (function setupFlatpickrDefensive() {
     if (!datePickerDiv || !dateRange || !dateInput) return;
     function init() {
@@ -453,9 +444,9 @@
     try {
       const token = await getAuthToken();
       const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
-      const resp = await fetch((window.API_BASE_URL || '') + '/entries', { method: 'GET', headers });
+      const resp = await fetch((window.API_BASE_URL || '') + '/api/entries', { method: 'GET', headers });
       if (!resp.ok) {
-        console.warn('/entries returned', resp.status);
+        console.warn('/api/entries returned', resp.status);
         if (!mappedEntries || mappedEntries.length === 0) mappedEntries = mapEntries(DEFAULT_ENTRIES);
         applyFiltersAndSort();
         return;
@@ -492,14 +483,14 @@
     try {
       const token = await getAuthToken();
       const headers = Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {});
-      const resp = await fetch((window.API_BASE_URL || '') + '/cleanup', {
+      const resp = await fetch((window.API_BASE_URL || '') + '/api/cleanup', {
         method:'POST',
         headers,
         body: JSON.stringify({ retentionDays: 30 })
       });
-      if (!resp.ok) { console.warn('cleanup returned', resp.status); return; }
+      if (!resp.ok) { console.warn('/api/cleanup returned', resp.status); return; }
       const data = await resp.json().catch(()=>null);
-      if (!data || !data.success) console.warn('cleanup response', data);
+      if (!data || !data.success) console.warn('/api/cleanup response', data);
     } catch (err) { console.error('cleanupOldData error', err); }
   }
 
@@ -507,16 +498,16 @@
     try {
       const token = await getAuthToken();
       const headers = Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {});
-      const resp = await fetch((window.API_BASE_URL || '') + '/saveEntry', {
+      const resp = await fetch((window.API_BASE_URL || '') + '/api/saveEntry', {
         method: 'POST', headers, body: JSON.stringify({ entry })
       });
-      if (!resp.ok) { console.warn('/saveEntry returned', resp.status); return false; }
+      if (!resp.ok) { console.warn('/api/saveEntry returned', resp.status); return false; }
       const data = await resp.json().catch(()=>null);
       return data && data.success;
     } catch (err) { console.error('saveEntryToBackend error', err); return false; }
   }
 
-  // ---------------- TEST HELPERS (expose) ----------------
+  // ---------------- TEST HELPERS ----------------
   window.__KOSH__ = window.__KOSH__ || {};
   window.__KOSH__.setEntries = function(rawEntries) {
     currentEntries = Array.isArray(rawEntries) ? rawEntries : [];
@@ -532,7 +523,6 @@
       setupStatCardFilters();
       updateSortIndicators();
       loadProfile();
-      // load defaults immediately so user can see data while backend responds
       if (!mappedEntries || mappedEntries.length === 0) {
         mappedEntries = mapEntries(DEFAULT_ENTRIES);
         applyFiltersAndSort();
@@ -545,4 +535,4 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
-})(); 
+})();
