@@ -24,13 +24,11 @@ app.use(bodyParser.json({ limit: '2mb' }));
 
 // --- ensure both /entries and /api/entries (etc.) work for legacy & new clients ---
 // convenience aliases so both /entries and /api/entries (and cleanup/saveEntry) work
-app.get('/entries', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/entries' }), res, next));
 
 
 app.post('/cleanup', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/cleanup' }), res, next));
 
 
-app.post('/saveEntry', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/saveEntry' }), res, next));
 
 
 // optional: keep scrapes mapping too if you expect /scrapes <-> /api/scrapes
@@ -424,6 +422,20 @@ app.get('/api/entries', (req, res, next) => app._router.handle(Object.assign(req
 app.post('/api/saveEntry', (req, res, next) => app._router.handle(Object.assign(req, { url: '/saveEntry' }), res, next));
 
 /* --- Compatibility aliases: accept both /entries and /saveEntry as well as /api/... --- */
+// Map /api/entries -> /entries handler
+app.get('/api/entries', (req, res, next) => app._router.handle(Object.assign(req, { url: '/entries' }), res, next));
+
+// Map /api/saveEntry -> /saveEntry handler
+app.post('/api/saveEntry', (req, res, next) => app._router.handle(Object.assign(req, { url: '/saveEntry' }), res, next));
+
+/* --- Compatibility aliases (single canonical block): /api/* -> legacy handlers --- */
+// Map /api/entries -> /entries handler
+app.get('/api/entries', (req, res, next) => app._router.handle(Object.assign(req, { url: '/entries' }), res, next));
+
+// Map /api/saveEntry -> /saveEntry handler
+app.post('/api/saveEntry', (req, res, next) => app._router.handle(Object.assign(req, { url: '/saveEntry' }), res, next));
+
+/* --- Compatibility aliases (single canonical block): /api/* -> legacy handlers --- */
 // Map /api/entries -> /entries handler
 app.get('/api/entries', (req, res, next) => app._router.handle(Object.assign(req, { url: '/entries' }), res, next));
 
