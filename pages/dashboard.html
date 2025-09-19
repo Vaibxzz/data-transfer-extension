@@ -52,10 +52,12 @@
     .column-search-container{display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #e5e7eb;padding:8px;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.1)}
     .column-search-container.active{display:block}
     th.search-active{background:#7c3aed !important;color:#fff}
-    /* make sort emoji small and aligned */
+    /* sort emoji styling */
     .sort-indicator { display:inline-block; margin-left:8px; font-size:14px; opacity:0.85; vertical-align:middle; }
     .col-title { display:inline-flex; align-items:center; gap:8px; font-weight:700; }
-    .col-search-emoji { font-size:14px; opacity:0.9; }
+    /* new search SVG styling */
+    .search-icon { width:16px; height:16px; display:inline-block; vertical-align:middle; opacity:0.9; }
+    .col-text { display:inline-block; vertical-align:middle; }
   </style>
 </head>
 <body>
@@ -126,22 +128,50 @@
         <thead>
           <tr>
             <th data-column="firstName">
-              <span class="col-title"><span class="col-search-emoji">🔍</span><span>First Name</span></span>
+              <span class="col-title">
+                <!-- modern inline SVG search icon -->
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <circle cx="11" cy="11" r="6"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <span class="col-text">First Name</span>
+              </span>
               <span class="sort-indicator" data-col="firstName">↕️</span>
               <div class="column-search-container"><input type="text" class="column-search" placeholder="Search first name..." /></div>
             </th>
+
             <th data-column="lastName">
-              <span class="col-title"><span class="col-search-emoji">🔍</span><span>Last Name</span></span>
+              <span class="col-title">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <circle cx="11" cy="11" r="6"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <span class="col-text">Last Name</span>
+              </span>
               <span class="sort-indicator" data-col="lastName">↕️</span>
               <div class="column-search-container"><input type="text" class="column-search" placeholder="Search last name..." /></div>
             </th>
+
             <th data-column="country">
-              <span class="col-title"><span class="col-search-emoji">🔍</span><span>Country</span></span>
+              <span class="col-title">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <circle cx="11" cy="11" r="6"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <span class="col-text">Country</span>
+              </span>
               <span class="sort-indicator" data-col="country">↕️</span>
               <div class="column-search-container"><input type="text" class="column-search" placeholder="Search country..." /></div>
             </th>
+
             <th data-column="processTime">
-              <span class="col-title"><span class="col-search-emoji">🔍</span><span>Process Time</span></span>
+              <span class="col-title">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <circle cx="11" cy="11" r="6"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <span class="col-text">Process Time</span>
+              </span>
               <span class="sort-indicator" data-col="processTime">↕️</span>
               <div class="column-search-container"><input type="text" class="column-search" placeholder="Search process time..." /></div>
             </th>
