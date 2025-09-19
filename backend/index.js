@@ -1,13 +1,13 @@
-// index.js
 'use strict';
 
 /**
- * KOSH backend (Express)
- * - Routes available under both /entries and /api/entries (legacy + new)
- * - Protected endpoints require Firebase ID token (Bearer) OR SCRAPE_API_TOKEN service token
+ * Fixed KOSH backend (Express)
+ * - Single canonical handlers for each route (no app._router.handle rewriting)
+ * - Accepts both legacy and /api/* prefixed routes via arrays (no recursion)
+ * - Protected endpoints accept Firebase ID token (Bearer) OR SCRAPE_API_TOKEN service token
  * - Dev-friendly fallbacks when Firestore (admin) isn't initialized
  *
- * Paste this file as-is into backend/index.js
+ * Paste this file as-is into backend/index.js (replaces the broken file).
  */
 
 const express = require('express');
@@ -118,16 +118,12 @@ async function verifyIdTokenFromHeader(req, res, next) {
   }
 }
 
-// -------------------- Legacy alias support (keeps compatibility) --------------------
-// The app accepts both plain and /api/ prefixed paths. We still define canonical handlers below.
-
-
 // -------------------- Health --------------------
 app.get('/_health', (req, res) => res.json({ ok: true }));
 app.get('/ping', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
 // -------------------- Register (dev-friendly) --------------------
-app.post('/register', safe(async (req, res) => {
+app.post(['/register', '/api/register'], safe(async (req, res) => {
   const { email, password, name } = req.body || {};
   if (!email || !password) return res.status(400).json({ success: false, message: 'Missing email/password' });
 
@@ -162,7 +158,7 @@ app.post('/register', safe(async (req, res) => {
 }));
 
 // -------------------- Login (dev-friendly) --------------------
-app.post('/login', safe(async (req, res) => {
+app.post(['/login', '/api/login'], safe(async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ success: false, message: 'Missing email/password' });
 
@@ -192,7 +188,6 @@ app.post('/login', safe(async (req, res) => {
 }));
 
 // -------------------- Entries (protected) --------------------
-// -------------------- Entries (protected) --------------------
 app.get(['/entries', '/api/entries'], verifyIdTokenFromHeader, safe(async (req, res) => {
   try {
     if (!db) return res.json({ success: true, entries: [] });
@@ -218,7 +213,6 @@ app.get(['/entries', '/api/entries'], verifyIdTokenFromHeader, safe(async (req, 
   }
 }));
 
-// -------------------- Save Entry (protected) --------------------
 // -------------------- Save Entry (protected) --------------------
 app.post(['/saveEntry', '/api/saveEntry'], verifyIdTokenFromHeader, safe(async (req, res) => {
   try {
@@ -246,7 +240,6 @@ app.post(['/saveEntry', '/api/saveEntry'], verifyIdTokenFromHeader, safe(async (
   }
 }));
 
-// -------------------- Cleanup (protected) --------------------
 // -------------------- Cleanup (protected) --------------------
 app.post(['/cleanup', '/api/cleanup'], verifyIdTokenFromHeader, safe(async (req, res) => {
   try {
@@ -287,7 +280,7 @@ app.post(['/cleanup', '/api/cleanup'], verifyIdTokenFromHeader, safe(async (req,
 }));
 
 // -------------------- Scrapes (optional token) --------------------
-app.post('/api/scrapes', safe(async (req, res) => {
+app.post(['/scrapes', '/api/scrapes'], safe(async (req, res) => {
   try {
     const expectedToken = process.env.SCRAPE_API_TOKEN || '';
     if (expectedToken) {
