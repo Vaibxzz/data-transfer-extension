@@ -1,4 +1,3 @@
-
 (function () {
   'use strict';
 
@@ -104,6 +103,7 @@
   const profileEmailEl = safeQuery('#profile-email');
   const profileAvatarEl = safeQuery('#profile-avatar');
   const btnLogout = safeQuery('#btn-logout');
+  const loadingIndicator = safeQuery('#loading-indicator');
 
   // ---------------- STATE ----------------
   let currentEntries = [];
@@ -411,16 +411,6 @@
         if (typeof firebase !== 'undefined' && firebase && firebase.auth) {
           try { await firebase.auth().signOut(); } catch(e){ console.warn('firebase signOut failed', e); }
         }
-        if (typeof chrome !== 'undefined' && chrome.runtime) {
-          try {
-            if (typeof chrome.runtime.openOptionsPage === 'function') { chrome.runtime.openOptionsPage(); return; }
-            if (chrome.runtime.getURL) {
-              const url = chrome.runtime.getURL('auth.html');
-              if (chrome.tabs && chrome.tabs.create) { chrome.tabs.create({ url, active: true }); return; }
-              window.location.href = url; return;
-            }
-          } catch (err) { console.warn('chrome logout fallback failed', err); }
-        }
         try { window.location.href = '/auth.html'; } catch(e) { console.warn('navigate to auth failed', e); }
         try { window.close(); } catch(e){}
       } catch (err) { console.error('logout error', err); }
@@ -441,12 +431,14 @@
 
   // ---------------- FETCH / SAVE / CLEANUP ----------------
   async function fetchEntriesOnce() {
+    showLoading(true);
     try {
       const token = await getAuthToken();
       const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
       const resp = await fetch((window.API_BASE_URL || '') + '/api/entries', { method: 'GET', headers });
       if (!resp.ok) {
         console.warn('/api/entries returned', resp.status);
+        // fallback to defaults if we have none
         if (!mappedEntries || mappedEntries.length === 0) mappedEntries = mapEntries(DEFAULT_ENTRIES);
         applyFiltersAndSort();
         return;
@@ -457,6 +449,7 @@
         mappedEntries = mapEntries(currentEntries);
         applyFiltersAndSort();
       } else {
+        console.warn('/api/entries returned unexpected payload', payload);
         if (!mappedEntries || mappedEntries.length === 0) mappedEntries = mapEntries(DEFAULT_ENTRIES);
         applyFiltersAndSort();
       }
@@ -464,6 +457,8 @@
       console.error('fetchEntriesOnce error', err);
       if (!mappedEntries || mappedEntries.length === 0) mappedEntries = mapEntries(DEFAULT_ENTRIES);
       applyFiltersAndSort();
+    } finally {
+      showLoading(false);
     }
   }
 
@@ -488,7 +483,11 @@
         headers,
         body: JSON.stringify({ retentionDays: 30 })
       });
-      if (!resp.ok) { console.warn('/api/cleanup returned', resp.status); return; }
+      if (!resp.ok) {
+        // 404 or 401 are useful to surface
+        console.warn('/api/cleanup returned', resp.status);
+        return;
+      }
       const data = await resp.json().catch(()=>null);
       if (!data || !data.success) console.warn('/api/cleanup response', data);
     } catch (err) { console.error('cleanupOldData error', err); }
@@ -505,6 +504,12 @@
       const data = await resp.json().catch(()=>null);
       return data && data.success;
     } catch (err) { console.error('saveEntryToBackend error', err); return false; }
+  }
+
+  // ---------------- VISUAL HELPERS ----------------
+  function showLoading(on) {
+    if (!loadingIndicator) return;
+    loadingIndicator.style.display = on ? 'inline-block' : 'none';
   }
 
   // ---------------- TEST HELPERS ----------------
