@@ -21,19 +21,11 @@ const SCRAPE_API_TOKEN = process.env.SCRAPE_API_TOKEN || null;
 const app = express();
 app.use(bodyParser.json({ limit: '2mb' }));
 
-
 // --- ensure both /entries and /api/entries (etc.) work for legacy & new clients ---
 // convenience aliases so both /entries and /api/entries (and cleanup/saveEntry) work
 app.get('/entries', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/entries' }), res, next));
-
-
 app.post('/cleanup', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/cleanup' }), res, next));
-
-
 app.post('/saveEntry', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/saveEntry' }), res, next));
-
-
-// optional: keep scrapes mapping too if you expect /scrapes <-> /api/scrapes
 app.post('/scrapes', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/scrapes' }), res, next));
 
 // -------------------- CORS --------------------
@@ -50,7 +42,7 @@ const WHITELIST = new Set([
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (!origin) {
-    // server-to-server or curl: permit
+    // server-to-server or curl: permit broadly
     res.setHeader('Access-Control-Allow-Origin', '*');
     return next();
   }
@@ -196,9 +188,6 @@ app.post('/saveEntry', safe(verifyIdTokenFromHeader, async (req, res) => {
   const caller = req.__auth;
   if (!entry) return res.status(400).json({ success: false, message: 'Missing entry' });
 
-  // Validate userId matches token subject/email (best-effort)
-  // If caller.uid exists, prefer that; if token carries email, compare email
-  // We'll still store userId provided, but you can enforce stricter checks if wanted.
   try {
     if (!db) {
       console.warn('Firestore not available; saveEntry skipped.');
@@ -222,11 +211,8 @@ app.get('/entries', safe(verifyIdTokenFromHeader, async (req, res) => {
   try {
     if (!db) return res.json({ success: true, entries: [] });
 
-    // Determine user identifier from token (use email or uid)
     const uid = req.__auth.uid || null;
     const email = req.__auth.email || null;
-    // Query by userId saved in documents (we expect saved userId to be uid or email)
-    // Try both: first uid then email
     let entries = [];
     if (uid) {
       const snap = await db.collection('approvedEntries').where('userId', '==', uid).get();
@@ -236,7 +222,6 @@ app.get('/entries', safe(verifyIdTokenFromHeader, async (req, res) => {
       const snap2 = await db.collection('approvedEntries').where('userId', '==', email).get();
       snap2.forEach(d => entries.push(d.data()));
     }
-    // As a last resort, fetch none (don't leak)
     return res.json({ success: true, entries });
   } catch (err) {
     console.error('/entries error', err);
@@ -281,7 +266,90 @@ app.post('/cleanup', safe(verifyIdTokenFromHeader, async (req, res) => {
   }
 }));
 
-// -------------------- Receive scrapes from extension --------------------
+// -------------------- API aliases (mirror /api/* routes so clients hitting /api/... succeed) --------------------
+// Note: these handlers reuse same logic as above so both /entries and /api/entries behave the same.
+app.get('/api/entries', safe(verifyIdTokenFromHeader, async (req, res) => {
+  try {
+    if (!db) return res.json({ success: true, entries: [] });
+
+    const uid = req.__auth.uid || null;
+    const email = req.__auth.email || null;
+    let entries = [];
+    if (uid) {
+      const snap = await db.collection('approvedEntries').where('userId', '==', uid).get();
+      snap.forEach(d => entries.push(d.data()));
+    }
+    if (entries.length === 0 && email) {
+      const snap2 = await db.collection('approvedEntries').where('userId', '==', email).get();
+      snap2.forEach(d => entries.push(d.data()));
+    }
+    return res.json({ success: true, entries });
+  } catch (err) {
+    console.error('/api/entries error', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+}));
+
+app.post('/api/saveEntry', safe(verifyIdTokenFromHeader, async (req, res) => {
+  const { entry, userId } = req.body || {};
+  const caller = req.__auth;
+  if (!entry) return res.status(400).json({ success: false, message: 'Missing entry' });
+
+  try {
+    if (!db) {
+      console.warn('Firestore not available; saveEntry skipped.');
+      return res.json({ success: true, message: 'dev-saved' });
+    }
+    const payload = {
+      ...entry,
+      userId: userId || (caller && caller.uid) || null,
+      timestamp: Date.now()
+    };
+    await db.collection('approvedEntries').add(payload);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('/api/saveEntry error', err);
+    return res.status(500).json({ success: false, message: 'save failed' });
+  }
+}));
+
+app.post('/api/cleanup', safe(verifyIdTokenFromHeader, async (req, res) => {
+  try {
+    if (!db) return res.json({ success: true, deletedCount: 0 });
+
+    const retentionDays = Number(req.body.retentionDays || process.env.DEFAULT_RETENTION_DAYS || 30);
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const uid = req.__auth.uid || req.__auth.email || null;
+    if (!uid) return res.status(400).json({ success: false, message: 'No user in token' });
+
+    const snap = await db.collection('approvedEntries').where('userId', '==', uid).get();
+    const batch = db.batch();
+    let deleted = 0;
+    snap.forEach(doc => {
+      const data = doc.data();
+      let ts = data.timestamp || data.processTime || data.time || null;
+      let tsMs = null;
+      if (typeof ts === 'number') tsMs = ts;
+      else if (typeof ts === 'string' && /^\d+$/.test(ts)) {
+        tsMs = ts.length === 10 ? parseInt(ts) * 1000 : parseInt(ts);
+      } else if (typeof ts === 'string') {
+        const d = new Date(ts);
+        if (!isNaN(d.getTime())) tsMs = d.getTime();
+      }
+      if (tsMs !== null && tsMs < cutoff) {
+        batch.delete(doc.ref);
+        deleted++;
+      }
+    });
+    if (deleted > 0) await batch.commit();
+    return res.json({ success: true, deletedCount: deleted });
+  } catch (err) {
+    console.error('/api/cleanup error', err);
+    return res.status(500).json({ success: false, message: 'cleanup failed' });
+  }
+}));
+
+// -------------------- Receive scrapes from extension (token optional in dev) --------------------
 app.post('/api/scrapes', safe(async (req, res) => {
   // Simple token-based auth: if SCRAPE_API_TOKEN env var is set, require it.
   const expectedToken = process.env.SCRAPE_API_TOKEN || '';
@@ -337,60 +405,7 @@ app.post('/api/scrapes', safe(async (req, res) => {
     return res.status(500).json({ ok: false, error: 'save_failed' });
   }
 }));
-// -------------------- Scrapes endpoint for extension --------------------
-// -------------------- Receive scrapes from extension --------------------
-app.post('/api/scrapes', safe(async (req, res) => {
-  // Token-based auth if SCRAPE_API_TOKEN is set
-  const expectedToken = process.env.SCRAPE_API_TOKEN || '';
-  if (expectedToken) {
-    const auth = (req.get('authorization') || '');
-    const match = auth.match(/^Bearer\s+(.+)$/i);
-    const token = match ? match[1] : null;
-    if (!token || token !== expectedToken) {
-      console.warn('Unauthorized /api/scrapes attempt from', req.ip);
-      return res.status(401).json({ ok: false, error: 'Unauthorized' });
-    }
-  }
 
-  const payload = req.body || {};
-  if (!payload.fetchedAt || typeof payload.result === 'undefined') {
-    return res.status(400).json({ ok: false, error: 'Invalid payload: missing fetchedAt or result' });
-  }
-
-  // Protect against huge payloads
-  const size = JSON.stringify(payload).length;
-  if (size > 300000) {
-    return res.status(413).json({ ok: false, error: 'Payload too large' });
-  }
-
-  try {
-    console.log('[api/scrapes] incoming scrape', { fetchedAt: payload.fetchedAt, rowCount: payload.result.rowCount || 0 });
-
-    // If Firestore is available, persist; otherwise just log
-    let docId = null;
-    if (db) {
-      const ref = db.collection('scrapes').doc();
-      await ref.set({
-        payload,
-        receivedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-      docId = ref.id;
-
-      // Update latest meta doc for dashboard convenience
-      await db.collection('meta').doc('latestScrape').set({
-        lastId: docId,
-        fetchedAt: payload.fetchedAt,
-        rowCount: payload.result.rowCount || 0,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
-    }
-
-    return res.json({ ok: true, id: docId });
-  } catch (err) {
-    console.error('Error saving scrape', err);
-    return res.status(500).json({ ok: false, error: 'save_failed' });
-  }
-}));
 // -------------------- Fallback / 404 --------------------
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Not found' });
