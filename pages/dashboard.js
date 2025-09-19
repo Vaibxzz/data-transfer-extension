@@ -141,7 +141,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".sort-indicator").forEach((ind) => (ind.textContent = "⇅"));
     if (sortConfig.column) {
       const el = document.querySelector(`th[data-column="${sortConfig.column}"] .sort-indicator`);
-      if (el) el.textContent = sortConfig.direction === "asc" ? "▲" : "▼";
+      if (el) el.textContent = sortConfig.direction === "asc" ? "↑" : "↓";
     }
   }
 
