@@ -120,10 +120,7 @@ async function verifyIdTokenFromHeader(req, res, next) {
 
 // -------------------- Legacy alias support (keeps compatibility) --------------------
 // The app accepts both plain and /api/ prefixed paths. We still define canonical handlers below.
-app.get('/entries', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/entries' }), res, next));
-app.post('/saveEntry', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/saveEntry' }), res, next));
-app.post('/cleanup', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/cleanup' }), res, next));
-app.post('/scrapes', (req, res, next) => app._router.handle(Object.assign(req, { url: '/api/scrapes' }), res, next));
+
 
 // -------------------- Health --------------------
 app.get('/_health', (req, res) => res.json({ ok: true }));
@@ -195,7 +192,8 @@ app.post('/login', safe(async (req, res) => {
 }));
 
 // -------------------- Entries (protected) --------------------
-app.get(['/entries', '/api/entries'], safe(verifyIdTokenFromHeader, async (req, res) => {
+// -------------------- Entries (protected) --------------------
+app.get(['/entries', '/api/entries'], verifyIdTokenFromHeader, safe(async (req, res) => {
   try {
     if (!db) return res.json({ success: true, entries: [] });
 
@@ -221,7 +219,8 @@ app.get(['/entries', '/api/entries'], safe(verifyIdTokenFromHeader, async (req, 
 }));
 
 // -------------------- Save Entry (protected) --------------------
-app.post(['/saveEntry', '/api/saveEntry'], safe(verifyIdTokenFromHeader, async (req, res) => {
+// -------------------- Save Entry (protected) --------------------
+app.post(['/saveEntry', '/api/saveEntry'], verifyIdTokenFromHeader, safe(async (req, res) => {
   try {
     const { entry, userId } = req.body || {};
     if (!entry) return res.status(400).json({ success: false, message: 'Missing entry' });
@@ -248,7 +247,8 @@ app.post(['/saveEntry', '/api/saveEntry'], safe(verifyIdTokenFromHeader, async (
 }));
 
 // -------------------- Cleanup (protected) --------------------
-app.post(['/cleanup', '/api/cleanup'], safe(verifyIdTokenFromHeader, async (req, res) => {
+// -------------------- Cleanup (protected) --------------------
+app.post(['/cleanup', '/api/cleanup'], verifyIdTokenFromHeader, safe(async (req, res) => {
   try {
     if (!db) return res.json({ success: true, deletedCount: 0 });
 
