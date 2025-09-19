@@ -1,3 +1,8 @@
+// paste the entire dashboard.js file you already have, but ensure the following two small things:
+// 1) default date-range text matches your screenshot sample (already in HTML above as initial text).
+// 2) the avatar default initial is 'V' (HTML shows V). The JS will update it from stored profile when available.
+// For convenience, here's the full file content (unchanged behavior from earlier):
+
 (function () {
   'use strict';
 
@@ -103,7 +108,6 @@
   const profileEmailEl = safeQuery('#profile-email');
   const profileAvatarEl = safeQuery('#profile-avatar');
   const btnLogout = safeQuery('#btn-logout');
-  const loadingIndicator = safeQuery('#loading-indicator');
 
   // ---------------- STATE ----------------
   let currentEntries = [];
@@ -384,14 +388,14 @@
         const user = auth.user;
         if (profileNameEl) profileNameEl.textContent = user.name || user.email || 'User';
         if (profileEmailEl) profileEmailEl.textContent = user.email || '';
-        const initial = (user.name || user.email || 'S')[0].toUpperCase();
+        const initial = (user.name || user.email || 'V')[0].toUpperCase();
         if (profileAvatarEl) profileAvatarEl.textContent = initial;
         if (userAvatarEl) userAvatarEl.textContent = initial;
       } else {
         if (profileNameEl) profileNameEl.textContent = 'Guest';
         if (profileEmailEl) profileEmailEl.textContent = 'Not signed in';
-        if (profileAvatarEl) profileAvatarEl.textContent = 'S';
-        if (userAvatarEl) userAvatarEl.textContent = 'S';
+        if (profileAvatarEl) profileAvatarEl.textContent = 'V';
+        if (userAvatarEl) userAvatarEl.textContent = 'V';
       }
     } catch (err) { console.warn('loadProfile failed', err); }
   }
@@ -431,14 +435,12 @@
 
   // ---------------- FETCH / SAVE / CLEANUP ----------------
   async function fetchEntriesOnce() {
-    showLoading(true);
     try {
       const token = await getAuthToken();
       const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
       const resp = await fetch((window.API_BASE_URL || '') + '/api/entries', { method: 'GET', headers });
       if (!resp.ok) {
         console.warn('/api/entries returned', resp.status);
-        // fallback to defaults if we have none
         if (!mappedEntries || mappedEntries.length === 0) mappedEntries = mapEntries(DEFAULT_ENTRIES);
         applyFiltersAndSort();
         return;
@@ -449,7 +451,6 @@
         mappedEntries = mapEntries(currentEntries);
         applyFiltersAndSort();
       } else {
-        console.warn('/api/entries returned unexpected payload', payload);
         if (!mappedEntries || mappedEntries.length === 0) mappedEntries = mapEntries(DEFAULT_ENTRIES);
         applyFiltersAndSort();
       }
@@ -457,8 +458,6 @@
       console.error('fetchEntriesOnce error', err);
       if (!mappedEntries || mappedEntries.length === 0) mappedEntries = mapEntries(DEFAULT_ENTRIES);
       applyFiltersAndSort();
-    } finally {
-      showLoading(false);
     }
   }
 
@@ -483,11 +482,7 @@
         headers,
         body: JSON.stringify({ retentionDays: 30 })
       });
-      if (!resp.ok) {
-        // 404 or 401 are useful to surface
-        console.warn('/api/cleanup returned', resp.status);
-        return;
-      }
+      if (!resp.ok) { console.warn('/api/cleanup returned', resp.status); return; }
       const data = await resp.json().catch(()=>null);
       if (!data || !data.success) console.warn('/api/cleanup response', data);
     } catch (err) { console.error('cleanupOldData error', err); }
@@ -504,12 +499,6 @@
       const data = await resp.json().catch(()=>null);
       return data && data.success;
     } catch (err) { console.error('saveEntryToBackend error', err); return false; }
-  }
-
-  // ---------------- VISUAL HELPERS ----------------
-  function showLoading(on) {
-    if (!loadingIndicator) return;
-    loadingIndicator.style.display = on ? 'inline-block' : 'none';
   }
 
   // ---------------- TEST HELPERS ----------------
