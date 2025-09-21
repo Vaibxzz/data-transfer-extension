@@ -25,12 +25,50 @@
   function showSuccess(msg){ console.log(msg); /* optional UI toast */ }
 
   function setLocalSession(user, method='local'){
+  try {
+    const rec = { user, method, ts: Date.now(), expiry: Date.now() + 86400000 };
+    // Always write to localStorage for web view compatibility
+    try { localStorage.setItem('kosh_auth', JSON.stringify(rec)); } catch(e){ /* ignore */ }
+
+    // ALSO write to chrome.storage.local so extension pages (popup/background) see it
     try {
-      const rec = { user, method, ts:Date.now(), expiry: Date.now()+86400000 };
-      localStorage.setItem('kosh_auth', JSON.stringify(rec));
-      console.log('Authenticated user set locally:', user);
-    } catch(e){}
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ kosh_auth: rec }, () => {
+          // ignore errors (chrome.runtime.lastError) silently
+          try { if (chrome.runtime && chrome.runtime.lastError) console.debug('chrome.storage.local.set error', chrome.runtime.lastError); } catch(e){}
+        });
+      }
+    } catch (e) {
+      // non-fatal — extension API not available in web context
+    }
+
+    // If Firebase auth is available, try to also persist the ID token for backend calls
+    try {
+      // getFirebaseHandles()/auth may be available; try to get current user token
+      const h = getFirebaseHandles();
+      const firebaseAuth = h && h.auth ? h.auth : (typeof firebase !== 'undefined' && firebase.auth ? firebase.auth() : null);
+      if (firebaseAuth && firebaseAuth.currentUser && typeof firebaseAuth.currentUser.getIdToken === 'function') {
+        firebaseAuth.currentUser.getIdToken(/* forceRefresh */ false)
+          .then(idToken => {
+            // store the token in chrome.storage.local and localStorage as well
+            try { localStorage.setItem('kosh_id_token', idToken); } catch(e){}
+            try {
+              if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                chrome.storage.local.set({ kosh_id_token: idToken }, () => {
+                  try { if (chrome.runtime && chrome.runtime.lastError) console.debug('chrome.storage.local.set id token error', chrome.runtime.lastError); } catch(e){}
+                });
+              }
+            } catch(e){}
+          })
+          .catch(err => { console.debug('getIdToken failed (non-fatal):', err && err.message ? err.message : err); });
+      }
+    } catch (e) { /* ignore */ }
+
+    console.log('Authenticated user set locally:', user);
+  } catch(e){
+    try { console.error('setLocalSession failed', e); } catch(_) {}
   }
+}
 
   async function handleAuthSuccess(resp, method='email'){
     try {
