@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Simple Form Filler",
+  "version": "1.0.0",
+  "description": "Simple extension that fills forms with test data",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Fill Form"
+  },
+  "permissions": [
+    "scripting",
+    "tabs",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ]
+}
